@@ -1,0 +1,106 @@
+name: Release
+
+# Pushing a tag such as v1.2.3 tests the code, builds an archive per
+# platform and publishes them as a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update && sudo apt-get install -y libusb-1.0-0-dev pkg-config
+      - run: go vet ./...
+      - run: go test ./...
+
+  build:
+    needs: test
+    name: ${{ matrix.goos }}-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest, goos: linux, goarch: amd64, arch: amd64 }
+          - { runner: ubuntu-latest, goos: linux, goarch: arm64, arch: arm64 }
+          - { runner: ubuntu-latest, goos: linux, goarch: arm, goarm: "7", arch: armv7 }
+          # macOS links libusb (native code), so each architecture builds
+          # on a Mac of its own.
+          - { runner: macos-latest, goos: darwin, goarch: arm64, arch: arm64 }
+          - { runner: macos-15-intel, goos: darwin, goarch: amd64, arch: amd64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install libusb
+        if: matrix.goos == 'darwin'
+        run: brew install libusb pkg-config
+      - name: Build
+        env:
+          VERSION: ${{ github.ref_name }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+        run: scripts/dist.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.goos }}-${{ matrix.arch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum *.tar.gz > SHA256SUMS && cat SHA256SUMS
+      - name: Release notes
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          cat > notes.md <<NOTES
+          ## 下载
+
+          | 系统 | 文件 |
+          |---|---|
+          | Linux x86_64（大多数 NAS、PC、服务器） | \`haobot-agent-$VERSION-linux-amd64.tar.gz\` |
+          | Linux ARM64（树莓派 4/5 64 位系统、ARM NAS） | \`haobot-agent-$VERSION-linux-arm64.tar.gz\` |
+          | Linux ARMv7（树莓派 32 位系统、老款 ARM 设备） | \`haobot-agent-$VERSION-linux-armv7.tar.gz\` |
+          | macOS Apple 芯片（M 系列） | \`haobot-agent-$VERSION-darwin-arm64.tar.gz\` |
+          | macOS Intel | \`haobot-agent-$VERSION-darwin-amd64.tar.gz\` |
+
+          不确定选哪个：Linux 上运行 \`uname -m\`，\`x86_64\` 选 amd64，\`aarch64\` 选 arm64，\`armv7l\` 选 armv7。
+
+          \`\`\`sh
+          tar xzf haobot-agent-$VERSION-linux-amd64.tar.gz
+          cd haobot-agent-$VERSION-linux-amd64
+          ./haobot-agent serve
+          \`\`\`
+
+          - 压缩包里有程序、许可证、说明文档，以及开机自启配置（Linux 是 systemd 和 udev 规则，macOS 是 launchd），安装方法见 README 的“开机自启”。
+          - macOS 版已内置 libusb，不需要 Homebrew。程序没有经过苹果签名，第一次运行前执行 \`xattr -d com.apple.quarantine haobot-agent\`，否则系统会拦截。
+          - 用 \`SHA256SUMS\` 校验下载的文件：\`sha256sum -c SHA256SUMS --ignore-missing\`。
+          NOTES
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" dist/*.tar.gz dist/SHA256SUMS \
+            --title "${{ github.ref_name }}" --notes-file notes.md --generate-notes \
+            $([[ "${{ github.ref_name }}" == *-* ]] && echo --prerelease)

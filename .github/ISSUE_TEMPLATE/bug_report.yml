@@ -1,0 +1,43 @@
+name: 问题报告 / Bug report
+description: 程序出错或行为不符合预期
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: 提交前请删掉日志里的手机号、短信内容、API Key 等个人信息。安全漏洞请不要在这里报告，见 SECURITY.md。
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么
+      description: 你做了什么，期望看到什么，实际看到了什么
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: "`haobot-agent version` 的输出"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: 系统
+      placeholder: macOS 15 arm64 / Debian 12 x86_64 / 某品牌 NAS
+    validations:
+      required: true
+  - type: input
+    id: modem
+    attributes:
+      label: 模组型号和固件
+      description: "服务停止时运行 `haobot-agent at ATI 'AT+QGMR'`"
+  - type: input
+    id: carrier
+    attributes:
+      label: 运营商，是否开通 VoLTE
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志
+      description: 管理后台“日志”页里的相关记录
+      render: text

@@ -1,0 +1,24 @@
+# Build output
+/bin/
+/dist/
+ui/node_modules/
+*.tsbuildinfo
+
+# Runtime data: databases, keys, recordings and backups hold private
+# messages and calls. Keep the data directory outside the repository.
+/data/
+*.db
+*.db-wal
+*.db-shm
+*.key
+*.crt
+*.pem
+*.wav
+*.pcm
+haobot-backup-*.tar.gz
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
