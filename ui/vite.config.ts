@@ -2,6 +2,10 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
+// Node's process, declared here rather than pulling in @types/node for one
+// environment variable.
+declare const process: { env: Record<string, string | undefined> };
+
 // The build lands in the Go package that embeds it; `pnpm dev` proxies the
 // API to an agent running locally, on :9081 unless HAOBOT_PORT says otherwise.
 export default defineConfig({
