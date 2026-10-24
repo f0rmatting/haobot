@@ -103,7 +103,9 @@ func explain(kind Kind, code int, msg string) *botError {
 			e.text = "IP 不在机器人的白名单里（" + msg + "）"
 		case 19024:
 			e.text = "消息里没有机器人要求的自定义关键词：可以把关键词设为“号小助”，或关闭关键词校验（" + msg + "）"
-		case 9499, 11232:
+		case 9499:
+			e.text = "飞书认为请求格式不对（" + msg + "）"
+		case 11232:
 			e.text, e.permanent, e.limited = "发送太频繁，被飞书限流", false, true
 		}
 	case KindDingTalk:

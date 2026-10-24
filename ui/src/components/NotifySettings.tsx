@@ -238,7 +238,7 @@ function TelegramForm({ data: all }: { data: NotifySettings }) {
 const webhookGuide: Record<WebhookKind, { steps: ReactNode[]; placeholder: string; secret?: string }> = {
   feishu: {
     steps: [
-      "在飞书群里打开“设置 → 群机器人 → 添加机器人”，选择“自定义机器人”。",
+      "在飞书群里点右上角的“更多 → 设置 → 群机器人 → 添加机器人”，选择“自定义机器人”。找不到这个选项的话，可能是企业管理员关闭了自定义机器人。",
       "安全设置建议选“签名校验”，把密钥填到下面；也可以选“自定义关键词”并填“号小助”。",
       "复制 Webhook 地址填到下面，保存后点“发送测试消息”。",
     ],
