@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -379,18 +381,47 @@ func (s *Store) AssemblePending(ctx context.Context, now time.Time, staleAfter t
 	type groupKey struct {
 		device, sender string
 		ref, total     int
+		run            int
 	}
 	groups := make(map[groupKey][]pendingSegment)
 	var order []groupKey
+	// Text-numbered parts carry no reference, so two such messages from one
+	// sender share a key; run tells them apart. A part joins the run sent
+	// closest to it that has no other text for its number, or starts one.
+	runs := make(map[groupKey]int)
 	for rows.Next() {
 		var p pendingSegment
 		if err := rows.Scan(&p.id, &p.deviceID, &p.sender, &p.sentAt, &p.receivedAt, &p.ref, &p.total, &p.seq, &p.body, &p.binary, &p.port); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		key := groupKey{p.deviceID, p.sender, p.ref, p.total}
+		if p.total <= 1 && !p.binary {
+			if seq, total, rest, ok := textPartNumber(p.body); ok {
+				p.ref, p.total, p.seq, p.body = textRef, total, seq, rest
+			}
+		}
+		key := groupKey{p.deviceID, p.sender, p.ref, p.total, 0}
 		if p.total <= 1 {
 			key.ref = -int(p.id) // every single-part segment is its own group
+		} else if p.ref == textRef {
+			base, best, bestGap := key, -1, int64(0)
+			for run := range runs[base] {
+				key.run = run
+				group := groups[key]
+				taken := false
+				for _, q := range group {
+					taken = taken || (q.seq == p.seq && q.body != p.body)
+				}
+				gap := max(p.sentAt-group[0].sentAt, group[0].sentAt-p.sentAt)
+				if !taken && gap <= textPartWindow && (best < 0 || gap < bestGap) {
+					best, bestGap = run, gap
+				}
+			}
+			if best < 0 {
+				best = runs[base]
+				runs[base]++
+			}
+			key.run = best
 		}
 		if _, seen := groups[key]; !seen {
 			order = append(order, key)
@@ -477,7 +508,10 @@ func (s *Store) AssemblePending(ctx context.Context, now time.Time, staleAfter t
 			return nil, err
 		}
 		for _, p := range parts {
-			if _, err := tx.ExecContext(ctx, `UPDATE segments SET message_id = ? WHERE id = ?`, msg.ID, p.id); err != nil {
+			// Text-numbered parts keep their numbers so Redecode can rebuild
+			// the message; the stored body keeps the prefix like the PDU.
+			if _, err := tx.ExecContext(ctx, `UPDATE segments SET message_id = ?, ref = ?, total = ?, seq = ? WHERE id = ?`,
+				msg.ID, p.ref, p.total, p.seq, p.id); err != nil {
 				return nil, err
 			}
 		}
@@ -757,6 +791,35 @@ func inList(ids []int64) (string, []any) {
 	return "(" + strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",") + ")", args
 }
 
+// textRef is the reference of parts numbered in their text rather than in a
+// UDH header; UDH references are never negative.
+const textRef = -1
+
+// textPartWindow is how far apart, in seconds, the parts of one
+// text-numbered message may have been sent; the SMSC sends them together.
+const textPartWindow = 5 * 60
+
+// maxTextParts bounds the part count read from a text prefix.
+const maxTextParts = 20
+
+// textPartPrefix matches the "(1/2)" some SMSCs put in front of each part
+// when they split a long message into separate plain SMS.
+var textPartPrefix = regexp.MustCompile(`^[(（](\d{1,2})/(\d{1,2})[)）]`)
+
+// textPartNumber reads a "(seq/total)" prefix and returns the text after it.
+func textPartNumber(body string) (seq, total int, rest string, ok bool) {
+	m := textPartPrefix.FindStringSubmatch(body)
+	if m == nil {
+		return 0, 0, body, false
+	}
+	seq, _ = strconv.Atoi(m[1])
+	total, _ = strconv.Atoi(m[2])
+	if total < 2 || total > maxTextParts || seq < 1 || seq > total {
+		return 0, 0, body, false
+	}
+	return seq, total, body[len(m[0]):], true
+}
+
 // missingPart marks a segment that never arrived.
 const missingPart = "[缺失分段]"
 
@@ -802,11 +865,11 @@ func (s *Store) Redecode(ctx context.Context, version string, decode Decoder) (i
 
 	type decoded struct {
 		id, messageID int64
-		seq           int
+		ref, seq      int
 		body          string
 		binary        bool
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT id, pdu, seq, COALESCE(message_id, 0) FROM segments`)
+	rows, err := tx.QueryContext(ctx, `SELECT id, pdu, ref, seq, COALESCE(message_id, 0) FROM segments`)
 	if err != nil {
 		return 0, err
 	}
@@ -814,7 +877,7 @@ func (s *Store) Redecode(ctx context.Context, version string, decode Decoder) (i
 	for rows.Next() {
 		var d decoded
 		var raw string
-		if err := rows.Scan(&d.id, &raw, &d.seq, &d.messageID); err != nil {
+		if err := rows.Scan(&d.id, &raw, &d.ref, &d.seq, &d.messageID); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -851,8 +914,12 @@ func (s *Store) Redecode(ctx context.Context, version string, decode Decoder) (i
 		bodies := make([]string, max(total, 1))
 		binary := false
 		for _, p := range parts {
+			body := p.body
+			if p.ref == textRef {
+				_, _, body, _ = textPartNumber(body)
+			}
 			if p.seq >= 1 && p.seq <= len(bodies) && bodies[p.seq-1] == "" {
-				bodies[p.seq-1] = p.body
+				bodies[p.seq-1] = body
 				binary = binary || p.binary
 			}
 		}

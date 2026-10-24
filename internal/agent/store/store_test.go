@@ -83,6 +83,76 @@ func TestAssembleStalePartial(t *testing.T) {
 	}
 }
 
+func TestAssembleTextNumberedParts(t *testing.T) {
+	s, ctx, now := openTest(t), context.Background(), time.Now()
+	// A lone part is no message yet, so nothing classifies or notifies it.
+	if _, err := s.SaveSegment(ctx, segment("a1", "10690", 0, 1, 1, "(1/2)防骗请关注“803反诈”，安装“", now)); err != nil {
+		t.Fatal(err)
+	}
+	if created, err := s.AssemblePending(ctx, now, time.Hour, nil); err != nil || len(created) != 0 {
+		t.Fatalf("lone part: created=%+v err=%v", created, err)
+	}
+	if pending, err := s.Unclassified(ctx, 10); err != nil || len(pending) != 0 {
+		t.Fatalf("lone part unclassified=%+v err=%v", pending, err)
+	}
+	// The SMSC sent a long message as plain SMS numbered in their text; a
+	// second message with the same numbering follows.
+	for _, seg := range []Segment{
+		segment("b1", "10690", 0, 1, 1, "(1/2)另一条", now),
+		segment("a2", "10690", 0, 1, 1, "(2/2)金护”app。", now),
+		segment("b2", "10690", 0, 1, 1, "（2/2）短信", now),
+		segment("c", "10690", 0, 1, 1, "(3/2)不是分段", now),
+	} {
+		if _, err := s.SaveSegment(ctx, seg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	created, err := s.AssemblePending(ctx, now, time.Hour, nil)
+	if err != nil || len(created) != 3 {
+		t.Fatalf("created=%+v err=%v", created, err)
+	}
+	want := []string{"防骗请关注“803反诈”，安装“金护”app。", "另一条短信", "(3/2)不是分段"}
+	for i, msg := range created {
+		if msg.Body != want[i] || !msg.Complete {
+			t.Fatalf("message %d: %+v, want body %q", i, msg, want[i])
+		}
+	}
+
+	// Re-decoding keeps the parts together and the prefixes out.
+	decode := func(raw string) (string, bool, error) {
+		return map[string]string{"a1": "(1/2)防骗", "a2": "(2/2)金护"}[raw], false, nil
+	}
+	if _, err := s.Redecode(ctx, "text-parts", decode); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetMessage(ctx, created[0].ID)
+	if err != nil || got.Body != "防骗金护" {
+		t.Fatalf("after redecode: %+v err=%v", got, err)
+	}
+}
+
+func TestAssembleTextNumberedPartsBySendTime(t *testing.T) {
+	s, ctx, now := openTest(t), context.Background(), time.Now()
+	// Two messages a minute apart, their second parts arriving swapped; a
+	// part sent much later belongs to neither.
+	at := func(seg Segment, sent time.Time) Segment { seg.SentAt = sent; return seg }
+	for _, seg := range []Segment{
+		at(segment("a1", "10690", 0, 1, 1, "(1/2)甲", now), now.Add(-time.Minute)),
+		at(segment("b1", "10690", 0, 1, 1, "(1/2)乙", now), now),
+		at(segment("b2", "10690", 0, 1, 1, "(2/2)二", now), now),
+		at(segment("a2", "10690", 0, 1, 1, "(2/2)一", now), now.Add(-time.Minute)),
+		at(segment("c2", "10690", 0, 1, 1, "(2/2)晚", now), now.Add(time.Hour)),
+	} {
+		if _, err := s.SaveSegment(ctx, seg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	created, err := s.AssemblePending(ctx, now, time.Hour, nil)
+	if err != nil || len(created) != 2 || created[0].Body != "甲一" || created[1].Body != "乙二" {
+		t.Fatalf("created=%+v err=%v", created, err)
+	}
+}
+
 func TestOpenMigratesFirstReleaseSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "old.db")
 	db, err := sql.Open("sqlite", "file:"+path)
