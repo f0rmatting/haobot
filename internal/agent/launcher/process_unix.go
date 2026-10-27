@@ -16,6 +16,13 @@ func alive(pid int) bool {
 	return err == nil || err == syscall.EPERM
 }
 
+// groupAlive reports whether any process of the group pid leads is left:
+// the agent's children, if it has any, are stopped with it.
+func groupAlive(pid int) bool {
+	err := syscall.Kill(-pid, 0)
+	return err == nil || err == syscall.EPERM
+}
+
 // terminate asks the agent to stop as Ctrl+C would; detach made it the
 // leader of its process group.
 func terminate(pid int) error { return syscall.Kill(-pid, syscall.SIGTERM) }

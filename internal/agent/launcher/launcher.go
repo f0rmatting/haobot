@@ -141,7 +141,7 @@ func (l Launcher) Stop() error {
 		return err
 	}
 	for end := time.Now().Add(15 * time.Second); time.Now().Before(end); time.Sleep(200 * time.Millisecond) {
-		if !alive(pid) {
+		if !groupAlive(pid) {
 			os.Remove(l.path(pidFile))
 			l.printf("号小助已停止。\n")
 			return nil
