@@ -75,6 +75,7 @@ echo "args: $*"
 python3 -c '
 import os, socket
 s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # as Go listeners do
 s.bind(("127.0.0.1", int(os.environ["FAKE_PORT"])))
 s.listen()
 while True:
