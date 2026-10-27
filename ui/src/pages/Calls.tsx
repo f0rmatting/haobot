@@ -2,15 +2,16 @@ import clsx from "clsx";
 import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Bot, ChevronDown, Delete, MessageSquare, Mic, Phone, PhoneIncoming, PhoneMissed, PhoneOff, PhoneOutgoing, Trash2, X } from "lucide-react";
+import { Bot, ChevronDown, Delete, MessageSquare, Mic, Phone, PhoneIncoming, PhoneMissed, PhoneOff, PhoneOutgoing, Trash2, UserPlus, X } from "lucide-react";
 import { api, type CallRecord, type CallSummary, type Page, type TranscriptLine } from "../lib/api";
 import { useStatus } from "../lib/hooks";
 import { dateTime, shortTime } from "../lib/format";
 import { deviceHealth, deviceName, knownDevices } from "../lib/devices";
 import { callAudio } from "../lib/callAudio";
-import { Badge, Button, Card, CardBody, CardHeader, Collapsible, ConfirmModal, Dot, Empty, IconButton, Input, Segmented, Select, Spinner, useToast } from "../components/ui";
+import { Badge, Button, Card, CardBody, CardHeader, Collapsible, ConfirmModal, Dot, Empty, IconButton, Input, PeerAvatar, Segmented, Select, Spinner, useToast } from "../components/ui";
 import { callAction } from "../components/CallCenter";
 import { MicCheck } from "../components/MicCheck";
+import { ContactModal } from "../components/ContactModal";
 
 type Filter = "all" | "assistant" | "missed";
 
@@ -173,6 +174,7 @@ function CallLog({ filter, multi }: { filter: Filter; multi: boolean }) {
   const toast = useToast();
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState<CallRecord | null>(null);
+  const [adding, setAdding] = useState<CallRecord | null>(null);
   const list = useInfiniteQuery({
     queryKey: ["calls", filter],
     queryFn: ({ pageParam }) => api.get<Page<CallRecord>>(`/api/calls?page=${pageParam}&pageSize=40${filter === "all" ? "" : `&kind=${filter}`}`),
@@ -196,12 +198,21 @@ function CallLog({ filter, multi }: { filter: Filter; multi: boolean }) {
         return (
           <div key={c.id} className="group rounded-2xl px-3 py-2.5 transition hover:bg-panel-2">
           <div className="flex items-center gap-3">
-            <div className={clsx("flex size-10 shrink-0 items-center justify-center rounded-2xl ring-1 ring-line", c.status === "missed" ? "bg-bad/10 text-bad" : "bg-panel-2 text-muted")}>
-              <Icon className="size-[18px]" />
-            </div>
+            {c.avatar ? (
+              <div className="relative shrink-0">
+                <PeerAvatar src={c.avatar} />
+                <span className={clsx("absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full ring-2 ring-panel-solid", c.status === "missed" ? "bg-bad text-white" : "bg-panel-2 text-muted")}>
+                  <Icon className="size-3" />
+                </span>
+              </div>
+            ) : (
+              <div className={clsx("flex size-10 shrink-0 items-center justify-center rounded-2xl ring-1 ring-line", c.status === "missed" ? "bg-bad/10 text-bad" : "bg-panel-2 text-muted")}>
+                <Icon className="size-[18px]" />
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <p className={clsx("truncate text-sm font-medium tabular-nums", c.status === "missed" && "text-bad")}>
-                {c.number || "未知号码"}
+                {c.name || c.number || "未知号码"}
                 {c.handledBy === "assistant" && (
                   <Badge tone="info" icon={Bot} className="ml-2 align-middle">
                     AI 接听
@@ -210,6 +221,7 @@ function CallLog({ filter, multi }: { filter: Filter; multi: boolean }) {
                 {multi && <span className="ml-2 text-[11px] font-normal text-subtle">{deviceName(status, c.deviceId)}</span>}
               </p>
               <p className="truncate text-xs text-muted" title={dateTime(c.startedAt)}>
+                {c.name && `${c.number} · `}
                 {c.direction === "in" ? "来电" : "去电"} · {shortTime(c.startedAt)}
                 {c.status === "completed" ? ` · 通话 ${talkTime(c.durationSec)}` : <span className={meta.tone}> · {meta.label}</span>}
               </p>
@@ -217,6 +229,7 @@ function CallLog({ filter, multi }: { filter: Filter; multi: boolean }) {
             <div className="flex items-center gap-0.5 opacity-70 transition group-hover:opacity-100">
               <IconButton icon={Phone} label="回拨" onClick={() => navigate(`/calls?to=${encodeURIComponent(c.number)}&d=${encodeURIComponent(c.deviceId)}`)} />
               <IconButton icon={MessageSquare} label="发短信" onClick={() => navigate(`/messages?d=${encodeURIComponent(c.deviceId)}&peer=${encodeURIComponent(c.peer)}`)} />
+              {c.number && c.nameSource !== "contact" && <IconButton icon={UserPlus} label="加入通讯录" onClick={() => setAdding(c)} />}
               <IconButton icon={Trash2} label="删除记录" onClick={() => setConfirm(c)} className="hover:text-bad" />
             </div>
           </div>
@@ -232,6 +245,7 @@ function CallLog({ filter, multi }: { filter: Filter; multi: boolean }) {
           </Button>
         </div>
       )}
+      {adding && <ContactModal initial={{ name: adding.name ?? "", number: adding.number, note: "" }} onClose={() => setAdding(null)} />}
       <ConfirmModal
         open={!!confirm}
         onClose={() => setConfirm(null)}

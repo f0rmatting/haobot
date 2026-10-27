@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Cpu, LayoutDashboard, LogOut, MessageSquareText, Monitor, Moon, Phone, ScrollText, Settings, Sparkles, Sun, Wand2 } from "lucide-react";
+import { BookUser, Cpu, LayoutDashboard, LogOut, MessageSquareText, Monitor, Moon, Phone, ScrollText, Settings, Sparkles, Sun, Wand2 } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
@@ -15,6 +15,7 @@ const nav = [
   { to: "/", label: "概览", icon: LayoutDashboard, end: true },
   { to: "/messages", label: "短信", icon: MessageSquareText },
   { to: "/calls", label: "电话", icon: Phone },
+  { to: "/contacts", label: "通讯录", icon: BookUser },
   { to: "/device", label: "设备", icon: Cpu },
   { to: "/settings", label: "设置", icon: Settings },
   { to: "/logs", label: "日志", icon: ScrollText },
@@ -169,7 +170,9 @@ export function Brand({ compact }: { compact?: boolean }) {
     <div className="flex items-center gap-2.5">
       <div className="bg-gradient-accent flex size-9 items-center justify-center rounded-xl shadow-lg shadow-cyan-500/25">
         <svg viewBox="0 0 24 24" className="size-5 text-white" fill="currentColor" aria-hidden>
-          <path d="M5 17h3v-5H5zm5.5 0h3V9h-3zM16 17h3V6h-3z" />
+          <path d="M6.6 2.3c.8 0 1.5.5 1.7 1.3l.9 3.2c.2.7 0 1.4-.6 1.9L7.3 9.7a12.5 12.5 0 0 0 7 7l1-1.3c.5-.6 1.2-.8 1.9-.6l3.2.9c.8.2 1.3.9 1.3 1.7V20c0 1-.8 1.8-1.8 1.8C10 21.8 2.2 14 2.2 4.1c0-1 .8-1.8 1.8-1.8z" />
+          <path d="M17 1.5c.35 2.4 1.6 3.65 4 4-2.4.35-3.65 1.6-4 4-.35-2.4-1.6-3.65-4-4 2.4-.35 3.65-1.6 4-4z" />
+          <circle cx="21" cy="11" r="1.1" opacity=".75" />
         </svg>
       </div>
       {!compact && (

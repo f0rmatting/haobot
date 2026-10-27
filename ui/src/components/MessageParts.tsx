@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Message } from "../lib/api";
 import { categoryStyle } from "../lib/categories";
 import { shortTime } from "../lib/format";
+import { PeerAvatar } from "./ui";
 
 export function CategoryChip({ name, className }: { name: string; className?: string }) {
   if (!name) {
@@ -23,7 +24,8 @@ export function CategoryChip({ name, className }: { name: string; className?: st
   );
 }
 
-export function SenderAvatar({ message, size = "md" }: { message: Pick<Message, "category" | "kind" | "binary">; size?: "md" | "lg" }) {
+export function SenderAvatar({ message, size = "md" }: { message: Pick<Message, "category" | "kind" | "binary" | "avatar">; size?: "md" | "lg" }) {
+  if (message.avatar) return <PeerAvatar src={message.avatar} size={size} />;
   const s = categoryStyle(message.category);
   const Icon = message.kind === "mms" ? ImageIcon : message.binary ? Binary : message.category ? s.icon : Mail;
   return (
@@ -103,7 +105,7 @@ export function MessageRow({ m, active, selected, selecting, onClick, onToggle }
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           {!m.read && <span className="bg-gradient-accent size-2 shrink-0 rounded-full" aria-label="未读" />}
-          <span className={clsx("truncate text-sm", m.read ? "font-medium text-fg/90" : "font-semibold")}>{m.sender || "未知号码"}</span>
+          <span className={clsx("truncate text-sm", m.read ? "font-medium text-fg/90" : "font-semibold")}>{m.name || m.sender || "未知号码"}</span>
           <span className="ml-auto shrink-0 text-[11px] text-subtle tabular-nums">{shortTime(m.sentAt)}</span>
         </div>
         <p className={clsx("mt-0.5 line-clamp-2 text-[13px] leading-relaxed", m.read ? "text-muted" : "text-fg/85")}>{preview(m)}</p>

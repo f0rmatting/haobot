@@ -2,7 +2,7 @@ import clsx from "clsx";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { AlertCircle, ArrowLeft, Check, Copy, Inbox, Loader2, MessageSquarePlus, MessagesSquare, MoreHorizontal, Phone, RotateCw, ScrollText, Search, Send, ShieldCheck, Tags, Trash2, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, Check, Copy, Inbox, Loader2, MessageSquarePlus, MessagesSquare, MoreHorizontal, Phone, RotateCw, ScrollText, Search, Send, ShieldCheck, Tags, Trash2, UserPlus, X } from "lucide-react";
 import { api, type ClassifierSettings, type Conversation, type Finding, type Message, type Page, type Status } from "../lib/api";
 import { useStatus } from "../lib/hooks";
 import { bytes, dateTime, shortTime } from "../lib/format";
@@ -13,6 +13,7 @@ import { usePrefs } from "../lib/prefs";
 import { Badge, Button, Card, ConfirmModal, Empty, IconButton, Input, Select, Spinner, Textarea, useToast } from "../components/ui";
 import { CategoryChip, CodePill, SenderAvatar, preview } from "../components/MessageParts";
 import { NewMessageModal } from "../components/NewMessage";
+import { ContactModal } from "../components/ContactModal";
 import { Popover } from "../components/Popover";
 import { ClassificationModal } from "../components/ClassifyLog";
 
@@ -217,7 +218,7 @@ function ConversationRow({ c, status, multi, active, onClick }: { c: Conversatio
       onClick={onClick}
       className={clsx("flex w-full gap-3 rounded-2xl px-3 py-3 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-accent/60", active ? "bg-accent/10 ring-1 ring-accent/25" : "hover:bg-panel-2")}
     >
-      <SenderAvatar message={outgoing ? { ...last, category: "个人消息" } : last} />
+      <SenderAvatar message={{ ...last, category: outgoing ? "个人消息" : last.category, avatar: c.avatar }} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className={clsx("truncate text-sm", c.unread ? "font-semibold" : "font-medium text-fg/90")}>{displayPeer(c)}</span>
@@ -243,7 +244,7 @@ function ConversationRow({ c, status, multi, active, onClick }: { c: Conversatio
 }
 
 function displayPeer(c: Conversation): string {
-  return c.last.direction === "in" ? c.last.sender || c.peer : c.peer;
+  return c.name || (c.last.direction === "in" ? c.last.sender || c.peer : c.peer);
 }
 
 function DeviceTag({ name }: { name: string }) {
@@ -302,7 +303,9 @@ function Thread({ deviceId, peer, status, multi, onBack }: { deviceId: string; p
     }
   };
 
-  const title = lastIncoming?.sender || peer;
+  const number = lastIncoming?.sender || peer;
+  const named = messages[0];
+  const [adding, setAdding] = useState(false);
 
   return (
     <Card className="animate-in flex h-[calc(100vh-10.5rem)] min-h-[480px] flex-col">
@@ -310,18 +313,21 @@ function Thread({ deviceId, peer, status, multi, onBack }: { deviceId: string; p
         <IconButton icon={ArrowLeft} label="返回会话列表" onClick={onBack} className="lg:hidden" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h2 className="truncate text-[15px] font-semibold tracking-tight">{title}</h2>
+            <h2 className="truncate text-[15px] font-semibold tracking-tight">{named?.name || number}</h2>
             {lastIncoming?.category && <CategoryChip name={lastIncoming.category} />}
           </div>
           <p className="truncate text-xs text-muted">
+            {named?.name ? `${number} · ` : ""}
             {multi || device ? `经由 ${deviceName(status, deviceId)}` : ""}
             {device?.identity.number ? `（本机 ${device.identity.number}）` : ""}
             {thread.data ? ` · 共 ${thread.data.pages[0].total} 条` : ""}
           </p>
         </div>
         {isPersonalNumber(peer) && <IconButton icon={Phone} label="拨打电话" onClick={() => navigate(`/calls?to=${encodeURIComponent(peer)}&d=${encodeURIComponent(deviceId)}`)} />}
+        {named && named.nameSource !== "contact" && <IconButton icon={UserPlus} label="加入通讯录" onClick={() => setAdding(true)} />}
         <IconButton icon={Trash2} label="删除会话" onClick={() => setConfirmDelete(true)} className="hover:text-bad" />
       </div>
+      {adding && <ContactModal initial={{ name: named?.name ?? "", number, note: "" }} onClose={() => setAdding(false)} />}
 
       <div
         ref={scroller}

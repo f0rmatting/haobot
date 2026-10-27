@@ -26,7 +26,6 @@ case $GOOS in
 linux)
 	CGO_ENABLED=0 GOOS=linux GOARCH=$GOARCH GOARM=${GOARM:-} \
 		go build -trimpath -ldflags "$ldflags" -o "$out/haobot-agent" ./cmd/haobot-agent
-	cp deploy/agent/haobot-agent.service deploy/agent/99-ec20.rules "$out/"
 	;;
 darwin)
 	if [ "$GOARCH" != "$(go env GOHOSTARCH)" ] || [ "$(go env GOHOSTOS)" != darwin ]; then
@@ -53,7 +52,6 @@ PC
 		echo "libusb is still linked dynamically" >&2
 		exit 1
 	fi
-	cp deploy/agent/com.haobot.agent.plist "$out/"
 	;;
 *)
 	echo "unsupported GOOS $GOOS" >&2

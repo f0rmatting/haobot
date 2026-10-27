@@ -75,7 +75,17 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           cat > notes.md <<NOTES
-          ## 下载
+          ## 安装或升级
+
+          Linux 和 macOS 都是一行命令，会自动选择系统和架构、校验文件，把 \`haobot-agent\` 放进 PATH，并问你要不要现在启动：
+
+          \`\`\`sh
+          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | sh
+          \`\`\`
+
+          之后用 \`haobot-agent start\`（加 \`-lan\` 允许局域网访问）、\`haobot-agent stop\`、\`haobot-agent status\` 启停。已经装过的再执行一次就是升级，正在运行的会自动重启，设置和数据都保留。
+
+          ## 手动下载
 
           | 系统 | 文件 |
           |---|---|
@@ -85,16 +95,9 @@ jobs:
           | macOS Apple 芯片（M 系列） | \`haobot-agent-$VERSION-darwin-arm64.tar.gz\` |
           | macOS Intel | \`haobot-agent-$VERSION-darwin-amd64.tar.gz\` |
 
-          不确定选哪个：Linux 上运行 \`uname -m\`，\`x86_64\` 选 amd64，\`aarch64\` 选 arm64，\`armv7l\` 选 armv7。
+          不确定选哪个：运行 \`uname -m\`，\`x86_64\` 选 amd64，\`aarch64\`/\`arm64\` 选 arm64，\`armv7l\` 选 armv7。解压后运行 \`./haobot-agent start\`。
 
-          \`\`\`sh
-          tar xzf haobot-agent-$VERSION-linux-amd64.tar.gz
-          cd haobot-agent-$VERSION-linux-amd64
-          ./haobot-agent serve
-          \`\`\`
-
-          - 压缩包里有程序、许可证、说明文档，以及开机自启配置（Linux 是 systemd 和 udev 规则，macOS 是 launchd），安装方法见 README 的“开机自启”。
-          - macOS 版已内置 libusb，不需要 Homebrew。程序没有经过苹果签名，第一次运行前执行 \`xattr -d com.apple.quarantine haobot-agent\`，否则系统会拦截。
+          - macOS 版已内置 libusb，不需要 Homebrew。程序没有经过苹果签名，用浏览器下载的要先执行 \`xattr -d com.apple.quarantine haobot-agent\`，否则系统会拦截（用上面的安装命令不需要）。
           - 用 \`SHA256SUMS\` 校验下载的文件：\`sha256sum -c SHA256SUMS --ignore-missing\`。
           NOTES
       - name: Publish

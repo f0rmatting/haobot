@@ -2,9 +2,19 @@
 
 [English](README.en.md)
 
+![号小助：你的号码，有了助理](docs/images/promo-hero.jpg)
+
 你的短信和电话小助理：守着插在蜂窝模组（目前支持 Quectel EC20，其他移远、SIMCom 型号可以识别但没在真机上测过）里的号码，收短信、用大模型自动分类；来电由 AI 先接听，问清来意，再把短信和通话小结推送给你（Telegram、飞书、钉钉、企业微信）。
 
 `haobot-agent` 是一个单独的程序，支持 macOS 和 Linux（包括 NAS），连接模组，把短信和通话存进本机的 SQLite 数据库，自带一个带登录的网页管理后台。可以同时管理多台模组：短信按“设备 + 号码”汇总成会话，可以直接回复；可以在网页上用模组里的 SIM 卡打电话、接电话。
+
+![每条短信，一眼看懂：大模型自动分类，验证码一键复制](docs/images/promo-sms.jpg)
+
+![来电，AI 先接：问清来意，写成一句话小结](docs/images/promo-calls.jpg)
+
+![几张卡，一个后台：多台模组一屏看清](docs/images/promo-devices.jpg)
+
+<sub>以上截图中的号码、短信和通话均为演示用的虚构数据。</sub>
 
 > **使用须知**
 >
@@ -22,23 +32,30 @@
 
 ## 快速开始
 
-1. 从 [Releases](https://github.com/f0rmatting/haobot/releases) 下载对应系统的程序；或者用 Go 安装（macOS 先 `brew install libusb pkg-config`）：
+插上模组，在 Linux 或 macOS 的终端里执行：
 
-   ```sh
-   go install github.com/f0rmatting/haobot/cmd/haobot-agent@latest
-   ```
+```sh
+curl -fsSL https://raw.githubusercontent.com/f0rmatting/haobot/main/scripts/install.sh | sh
+```
 
-   也可以按下文“编译”自己编译。
-2. 插上模组，启动：
+脚本会自动识别系统和 CPU 架构，从 [Releases](https://github.com/f0rmatting/haobot/releases) 下载对应的程序、校验 SHA256，放到 `/usr/local/bin`（没有写权限时放到 `~/.local/bin`），然后问你要不要现在启动：
 
-   ```sh
-   ./haobot-agent serve                    # 只允许本机访问
-   ./haobot-agent serve -listen 0.0.0.0    # 允许局域网访问
-   ```
+- 选择启动后会再问一句“允许局域网里的其他电脑、手机打开管理后台吗”。NAS、树莓派这类没有屏幕的机器选 `y`。
+- 启动后终端会显示管理后台的地址和首次登录密码（用户名 `admin`）。浏览器打开后会提示证书不受信任，点“高级 → 继续访问”即可，原因见下文“HTTPS”。
+- 在“设置”里配置智能分类（大模型）、消息推送和 AI 接听，都可以先点“测试”确认能用。
 
-3. 终端会打印一次随机生成的登录密码（用户名 `admin`）。浏览器打开 <https://127.0.0.1:9081>，第一次会提示证书不受信任，见下文“HTTPS”。
-4. 在“设置”里配置智能分类（大模型）、消息推送和 AI 接听，都可以先点“测试”确认能用。
-5. 要开机自启，见下文“开机自启”。
+号小助在后台运行，关掉终端也不会停。之后用这几个命令管理，详见下文“后台运行”：
+
+```sh
+haobot-agent start        # 启动（第一次可以加 -lan 允许局域网访问，参数会被记住）
+haobot-agent status       # 是否在运行、管理后台地址
+haobot-agent stop         # 停止
+```
+
+- **升级**：再执行一次上面的安装命令。正在运行的号小助会先停下，换成新版本后按原来的参数重新启动，短信和设置都保留。
+- **网络慢**：国内连 GitHub 慢的话，可以用 `HAOBOT_MIRROR` 指定 GitHub 下载加速前缀，或用 `HAOBOT_VERSION=v1.2.3` 跳过查询最新版本。也可以从 Releases 手动下载，解压后运行 `./haobot-agent start`。
+- **Linux 权限**：普通用户运行时，需要在 `dialout` 组里才能读写模组串口（Arch 是 `uucp`），安装脚本发现缺少权限时会提示命令。详见下文“后台运行”。
+- **卸载**：`haobot-agent stop`，然后删掉程序文件即可。数据在 `~/.haobot`，不要了也一并删掉。
 
 - **多设备**：自动发现所有已知型号的模组（插上即用，拔掉自动移除），每台按 IMEI 区分，可以在后台改名、停用。也可以用 `-device` / `-usb-location` 指定端口。
 - **macOS**：通过 libusb 直接读写模组的 USB AT 口，不用装驱动（macOS 没有 EC20 的驱动，不会生成 `/dev/cu.*`）。多台同型号模组按 USB 端口位置区分。
@@ -97,7 +114,7 @@ make linux            # 生成 bin/haobot-agent-linux-amd64 和 bin/haobot-agent
 
 如果 Linux 上也想用 libusb 方式，就在 Linux 本机装好 `libusb-1.0-0-dev` 后执行 `make build`。
 
-发布用的压缩包（含说明文档和开机自启配置）：
+发布用的压缩包（含程序、许可证和说明文档）：
 
 ```sh
 make dist VERSION=v1.2.3   # dist/ 下生成 Linux amd64、arm64、armv7，在 Mac 上还会生成本机架构的 macOS 版
@@ -171,7 +188,7 @@ make ui-dev           # 开发模式：热更新，/api 代理到 127.0.0.1:9081
 - 软重启和 USB 复位每台设备每小时最多 3 次，超过后暂停自动处理并在概览页告警，处理完点“恢复自动处理”。重连不限次数。
 - 每台设备可以关闭“自动恢复”，关闭后卡死时只告警。
 - 收发自检会产生一条短信费用，只在手动点击时发送。
-- USB 复位：macOS 通过 libusb；Linux 串口方式通过 usbfs，需要对 `/dev/bus/usb` 有写权限（root，或参考 `deploy/agent/99-ec20.rules` 给 plugdev 组授权）。复位失败会记录原因，程序继续尝试重连。
+- USB 复位：macOS 通过 libusb；Linux 串口方式通过 usbfs，需要对 `/dev/bus/usb` 有写权限（root，或装上 `haobot-agent udev-rules` 输出的规则并加入 `plugdev` 组，见“后台运行”）。复位失败会记录原因，程序继续尝试重连。
 - 最近的自动恢复记录在设备页显示（重启 Agent 后清空），完整记录在“日志”页。
 - 外部告警（推送到手机等）还没做，目前只在管理后台显示。
 
@@ -261,6 +278,21 @@ make ui-dev           # 开发模式：热更新，/api 代理到 127.0.0.1:9081
 - 发送是异步的：先显示“发送中”，模组确认后变成“已发送”（已提交给运营商，不代表对方已收到），失败会显示原因并可以重发。程序重启时还没发完的消息会标为失败。
 - 回复 106、95 开头等服务号码时，页面会提醒：这类号码很多不接收回复，或会按增值业务收费。
 
+## 通讯录和黄页
+
+“通讯录”页面管理两份电话本：
+
+- **我的联系人**：私有电话本，只保存在本机的数据库里，可以上传头像（在浏览器里裁成正方形并压缩后上传）。在短信会话或通话记录上点“加入通讯录”也能添加。
+- **黄页**：内置约 300 家银行、快递、运营商、政府机构等的客服号码和 logo，数据来自 [metowolf/vCards](https://github.com/metowolf/vCards)（MIT），随版本更新。logo 是各机构的商标，仅用于识别来电和短信。可以修改内置机构的名称、分类、号码和 logo，删除不想要的机构，也可以新建自己的机构（如小区物业、某个 1069 营销号）。这些修改单独保存在本机数据库里，叠加在内置数据之上：没改过的机构照样随版本更新，改过的可以一键恢复成内置的样子。
+
+两份电话本都能导入、导出：联系人用 vCard（`.vcf`），可以和 iPhone、安卓、Google 通讯录互相导入（一个人有多个号码时按号码拆成多个联系人；号码已存在时默认跳过，可选覆盖）；黄页导出为 JSON，包含你的修改和自定义 logo，可以导入另一台号小助。
+
+短信、通话记录、来电弹窗和推送通知会显示号码对应的名字和头像，自己的联系人优先于黄页；联系人没有头像时用黄页里这个号码的 logo。
+
+号码不在黄页里的短信，会按开头或结尾的签名（如【招商银行】）匹配黄页机构，显示它的 logo，不改名字，也不会加入通讯录。签名谁都能打，所以只对 106、95 这类服务号码发来的短信生效；个人手机号发来的“【招商银行】……”不会显示 logo，以免让钓鱼短信看起来像真的。`+86`、空格、横杠写法不同的同一号码都能匹配；95/96 开头的服务号码，扩展号（如 955880）也会归到主号码。
+
+维护者更新黄页数据：`make yellowpages`，然后提交 `internal/agent/phonebook/yellowpages.json` 和 `logos/`（logo 缩到 96px，约 1MB）。
+
 ## 短信是怎么收的
 
 1. 初始化时设置 PDU 模式、存储位置，以及 `AT+CNMI=2,1,0,0,0`：新短信先存进模组，再上报 `+CMTI`。
@@ -304,28 +336,33 @@ HAOBOT_SIM_PIN=1234 ./bin/haobot-agent serve
 
 所以配错的 PIN 最多消耗一次机会，而且只在剩余次数是满额时才会发生。
 
-## 开机自启
+## 后台运行
 
-**macOS**（以当前用户身份运行，开机登录后自动启动）：
+`haobot-agent serve` 在前台运行，适合调试，按 Ctrl+C 停止。日常使用推荐 `start`：
 
-```sh
-make install-launchd
-```
+| 命令 | 说明 |
+|---|---|
+| `haobot-agent start [参数]` | 在后台启动，关掉终端也继续运行。参数和 `serve` 相同，另外 `-lan` 等于 `-listen 0.0.0.0`。启动成功后显示管理后台地址；第一次启动还会显示登录密码 |
+| `haobot-agent status` | 是否在运行、进程号、管理后台地址。没在运行时退出码为 3，方便脚本判断 |
+| `haobot-agent stop` | 停止，等它把数据库写完再退出 |
 
-默认的 plist 会从钥匙串的 `haobot-pin` 读取 PIN。SIM 卡没有设 PIN 的话，可以删掉 `deploy/agent/com.haobot.agent.plist` 里对应的两行。日志在 `~/Library/Logs/haobot-agent.log`，首次启动生成的密码也会写在这里，建议登录后立刻用 `haobot-agent passwd` 修改。
+- **参数会被记住**：带参数的 `start` 会把参数存到数据目录的 `start.json`，以后不带参数运行 `start`，就沿用上一次的参数。要改参数，就 `stop` 后带上新的参数重新 `start`。
+- **日志**：数据目录里的 `haobot.log`（默认 `~/.haobot/haobot.log`）。启动失败时，`start` 会直接显示最后几行日志。
+- **数据目录**：默认 `~/.haobot`。用了 `-data` 或环境变量 `HAOBOT_DATA` 的话，`stop`、`status` 也要带上同样的 `-data`（或同样的环境变量）。
+- **开机自启**：号小助不会自己设置开机自启。需要的话，可以把 `haobot-agent start` 加到系统的登录项或开机任务里。
 
-**Linux**（systemd）：
+**Linux 上的权限**：
 
-```sh
-# 用 Releases 下载的压缩包：在解压出的目录里执行
-sudo cp haobot-agent /usr/local/bin/haobot-agent
-sudo cp haobot-agent.service /etc/systemd/system/
-# 自己编译的话：bin/haobot-agent-linux-amd64 和 deploy/agent/haobot-agent.service
-sudo systemctl enable --now haobot-agent
-journalctl -u haobot-agent     # 查看首次启动生成的密码（从旧机器恢复的话，密码不变）
-```
+- 读写模组的串口（`/dev/ttyUSB*`）需要 `dialout` 组（Arch 是 `uucp`）：`sudo usermod -aG dialout $USER`，然后注销再登录。用 root 运行则不需要。
+- `haobot-agent udev-rules` 会输出一份 udev 规则，覆盖所有已知型号的模组：让 ModemManager 不要占用模组的 AT 口，并让 `plugdev` 组可以在模组卡死时复位它（自动恢复要用）。需要的话这样安装：
 
-用 usb 方式的话，把 `deploy/agent/99-ec20.rules` 复制到 `/etc/udev/rules.d/`。
+  ```sh
+  haobot-agent udev-rules | sudo tee /etc/udev/rules.d/99-haobot.rules
+  sudo udevadm control --reload && sudo udevadm trigger
+  sudo usermod -aG plugdev $USER     # 没有 plugdev 组的系统先 sudo groupadd plugdev
+  ```
+
+  之前插着的模组如果被 ModemManager 占着，装好规则后重新插拔一次。
 
 ## 调试
 
@@ -375,9 +412,9 @@ journalctl -u haobot-agent     # 查看首次启动生成的密码（从旧机�
 scp haobot-backup-*.tar.gz nas:/tmp/
 
 # 新机器：先停止 Agent，再恢复到它要用的数据目录
-sudo systemctl stop haobot-agent
-sudo haobot-agent restore -data /var/lib/haobot /tmp/haobot-backup-*.tar.gz
-sudo systemctl start haobot-agent
+haobot-agent stop                             # 新机器上正在运行的话先停下
+haobot-agent restore /tmp/haobot-backup-*.tar.gz
+haobot-agent start
 ```
 
 - 备份里有：数据库（短信、通话记录、设置、登录密码和登录会话）、加密密钥 `secret.key`，以及通话录音。
@@ -391,7 +428,7 @@ sudo systemctl start haobot-agent
 
 ```
 cmd/
-  haobot-agent/        命令行入口（serve / passwd / at / purge-binary / backup / restore / version）
+  haobot-agent/        命令行入口（serve / start / stop / status / passwd / at / purge-binary / backup / restore / version）
 internal/agent/
   transport/           串口和 libusb 两种连接方式，USB 复位
   modem/               AT 会话（区分指令应答和主动上报、超时后重新对齐）、短信、电话和状态指令
@@ -402,11 +439,12 @@ internal/agent/
   classify/            脱敏、验证码提取、大模型客户端（OpenAI 兼容 / Anthropic）、后台分类
   assistant/           AI 接听：百炼实时语音会话、变速、通话小结
   notify/              消息推送：Telegram、飞书、钉钉、企业微信
+  phonebook/           通讯录和内置黄页（gen.go 从 vCards 生成 yellowpages.json 和 logos/）
   settings/            后台保存的设置
+  launcher/            后台启动、停止、状态（start / stop / status），Linux udev 规则
   secret/              本地加密 PIN、API Key 和推送密钥
   web/                 JSON API、事件流、HTTPS，内嵌编译好的前端（dist/）
 ui/                    管理后台前端源码（React + Vite + TypeScript + Tailwind）
-deploy/agent/          launchd、systemd、udev 配置
 ```
 
 ## 路线图

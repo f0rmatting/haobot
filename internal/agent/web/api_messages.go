@@ -41,15 +41,17 @@ type messageJSON struct {
 	Error          string     `json:"error,omitempty"`
 	// Code is the verification code found in the body, for one-tap copying.
 	Code string `json:"code,omitempty"`
+	caller
 }
 
-func toMessageJSON(m store.Message) messageJSON {
+func (s *Server) toMessageJSON(m store.Message) messageJSON {
 	out := messageJSON{
 		ID: m.ID, Sender: m.Sender, Body: m.Body, SentAt: m.SentAt, ReceivedAt: m.ReceivedAt,
 		Parts: m.Parts, Complete: m.Complete, Binary: m.Binary, Kind: m.Kind,
 		MMSURL: m.MMSURL, MMSSize: m.MMSSize, MMSExpiry: timePtr(m.MMSExpiry),
 		Category: m.Category, CategorySource: m.CategorySource, Read: m.Read,
 		DeviceID: m.DeviceID, Peer: m.Peer, Direction: m.Direction, Status: m.Status, Error: m.Error,
+		caller: s.messageCaller(m),
 	}
 	if m.Direction == store.DirectionIn && !m.Binary && m.Kind == store.KindSMS && (m.Category == classify.Verification || classify.RuleVerification(m.Body)) {
 		out.Code = classify.ExtractCode(m.Body)
@@ -80,7 +82,7 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]messageJSON, 0, len(messages))
 	for _, m := range messages {
-		items = append(items, toMessageJSON(m))
+		items = append(items, s.toMessageJSON(m))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items": items, "total": total, "page": page, "pageSize": size,
@@ -118,7 +120,7 @@ func (s *Server) getMessage(w http.ResponseWriter, r *http.Request) {
 	if !found {
 		return
 	}
-	writeJSON(w, http.StatusOK, toMessageJSON(m))
+	writeJSON(w, http.StatusOK, s.toMessageJSON(m))
 }
 
 // redactedMessage shows exactly what the classifier would send to a model.
@@ -275,6 +277,7 @@ type conversationJSON struct {
 	Unread   int         `json:"unread"`
 	LastAt   time.Time   `json:"lastAt"`
 	Last     messageJSON `json:"last"`
+	caller
 }
 
 // listConversations groups messages by device and number.
@@ -295,7 +298,7 @@ func (s *Server) listConversations(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]conversationJSON, 0, len(convs))
 	for _, c := range convs {
-		items = append(items, conversationJSON{c.DeviceID, c.Peer, c.Total, c.Unread, c.LastAt, toMessageJSON(c.Last)})
+		items = append(items, conversationJSON{c.DeviceID, c.Peer, c.Total, c.Unread, c.LastAt, s.toMessageJSON(c.Last), s.messageCaller(c.Last)})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total, "page": page, "pageSize": size})
 }
@@ -317,7 +320,7 @@ func (s *Server) conversationMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]messageJSON, 0, len(messages))
 	for _, m := range messages {
-		items = append(items, toMessageJSON(m))
+		items = append(items, s.toMessageJSON(m))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total, "page": page, "pageSize": size})
 }
@@ -380,7 +383,7 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		s.opError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toMessageJSON(msg))
+	writeJSON(w, http.StatusOK, s.toMessageJSON(msg))
 }
 
 func (s *Server) resendMessage(w http.ResponseWriter, r *http.Request) {
@@ -398,5 +401,5 @@ func (s *Server) resendMessage(w http.ResponseWriter, r *http.Request) {
 		s.opError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toMessageJSON(msg))
+	writeJSON(w, http.StatusOK, s.toMessageJSON(msg))
 }

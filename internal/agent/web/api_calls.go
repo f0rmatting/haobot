@@ -29,6 +29,7 @@ type callJSON struct {
 	StartedAt  time.Time  `json:"startedAt"`
 	AnsweredAt *time.Time `json:"answeredAt"`
 	RecordID   int64      `json:"recordId"`
+	caller
 }
 
 var callStates = map[modem.CallState]string{
@@ -46,10 +47,10 @@ type audioJSON struct {
 	FillFrames  int64  `json:"fillFrames"`
 }
 
-func toCallsJSON(snap service.Snapshot) ([]callJSON, audioJSON) {
+func (s *Server) toCallsJSON(snap service.Snapshot) ([]callJSON, audioJSON) {
 	calls := make([]callJSON, 0, len(snap.Calls))
 	for _, c := range snap.Calls {
-		calls = append(calls, callJSON{c.ID, c.Incoming, callStates[c.State], c.Number, c.StartedAt, timePtr(c.AnsweredAt), c.RecordID})
+		calls = append(calls, callJSON{c.ID, c.Incoming, callStates[c.State], c.Number, c.StartedAt, timePtr(c.AnsweredAt), c.RecordID, s.caller(c.Number)})
 	}
 	a := snap.Audio
 	return calls, audioJSON{a.Active, a.Listeners, a.Error, a.RxPerSecond, a.MaxGapMs, a.MicFrames, a.FillFrames}
@@ -74,13 +75,15 @@ type callRecordJSON struct {
 	HasRecording bool            `json:"hasRecording"`
 	Summary      json.RawMessage `json:"summary"`
 	Transcript   json.RawMessage `json:"transcript"`
+	caller
 }
 
-func toCallRecordJSON(c store.CallRecord) callRecordJSON {
+func (s *Server) toCallRecordJSON(c store.CallRecord) callRecordJSON {
 	out := callRecordJSON{
 		ID: c.ID, DeviceID: c.DeviceID, Peer: c.Peer, Number: c.Number, Direction: c.Direction, Status: c.Status,
 		StartedAt: c.StartedAt, AnsweredAt: timePtr(c.AnsweredAt), EndedAt: timePtr(c.EndedAt), Seen: c.Seen,
 		HandledBy: c.HandledBy, HasRecording: c.Recording != "", Summary: rawJSON(c.Summary), Transcript: rawJSON(c.Transcript),
+		caller: s.caller(c.Peer),
 	}
 	if !c.AnsweredAt.IsZero() && !c.EndedAt.IsZero() {
 		out.DurationSec = int(c.EndedAt.Sub(c.AnsweredAt).Seconds())
@@ -98,7 +101,7 @@ func (s *Server) listCalls(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]callRecordJSON, 0, len(calls))
 	for _, c := range calls {
-		items = append(items, toCallRecordJSON(c))
+		items = append(items, s.toCallRecordJSON(c))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total, "page": page, "pageSize": size})
 }
@@ -379,7 +382,7 @@ func (s *Server) callbacks(w http.ResponseWriter, r *http.Request) {
 	}
 	items := []callbackJSON{}
 	for _, c := range calls {
-		item := callbackJSON{callRecordJSON: toCallRecordJSON(c)}
+		item := callbackJSON{callRecordJSON: s.toCallRecordJSON(c)}
 		if c.HandledBy == store.HandledByAssistant {
 			var sum struct{ Brief, Purpose, Callback, Urgency string }
 			if json.Unmarshal([]byte(c.Summary), &sum) != nil || !needsCallback(sum.Callback) {

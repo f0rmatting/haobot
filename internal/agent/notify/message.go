@@ -46,9 +46,18 @@ func number(n string) string {
 	return n
 }
 
-// MessageNote describes an SMS; a verification code is set apart so it can
-// be copied with one tap, or hidden when maskCodes is set.
-func MessageNote(m store.Message, device string, maskCodes bool) Note {
+// who is a sender or caller: the phone book's name, if any, before the number.
+func who(num, name string) []Span {
+	if name == "" {
+		return []Span{{Text: number(num), Code: true}}
+	}
+	return []Span{{Text: name + " "}, {Text: number(num), Code: true}}
+}
+
+// MessageNote describes an SMS from someone the phone book calls name (or
+// ""); a verification code is set apart so it can be copied with one tap,
+// or hidden when maskCodes is set.
+func MessageNote(m store.Message, name, device string, maskCodes bool) Note {
 	n := Note{Icon: "💬", Title: "短信", Color: "blue"}
 	if m.Kind == store.KindMMS {
 		n.Icon, n.Title = "🖼", "彩信通知"
@@ -59,7 +68,7 @@ func MessageNote(m store.Message, device string, maskCodes bool) Note {
 	if device != "" {
 		n.Tags = append(n.Tags, device)
 	}
-	n.Meta = []Span{{Text: "来自 "}, {Text: number(m.Sender), Code: true}, {Text: " · " + m.ReceivedAt.Format("01-02 15:04")}}
+	n.Meta = append(append([]Span{{Text: "来自 "}}, who(m.Sender, name)...), Span{Text: " · " + m.ReceivedAt.Format("01-02 15:04")})
 	body := m.Body
 	code := classify.ExtractCode(body)
 	if maskCodes && code != "" {
@@ -84,8 +93,9 @@ type summary struct {
 	Caller, Purpose, Urgency, Callback, Category, Brief, Error string
 }
 
-// CallNote describes a call event.
-func CallNote(e service.CallEvent) Note {
+// CallNote describes a call event; name is the phone book's name for the
+// number, or "".
+func CallNote(e service.CallEvent, name string) Note {
 	r := e.Record
 	var tags []string
 	if e.DeviceName != "" {
@@ -95,16 +105,16 @@ func CallNote(e service.CallEvent) Note {
 	switch e.Kind {
 	case service.CallEventRinging:
 		return Note{Icon: "📞", Title: "来电", Tags: tags, Color: "orange",
-			Meta: []Span{{Text: number(r.Number), Code: true}, {Text: " 正在呼入" + at}}}
+			Meta: append(who(r.Number, name), Span{Text: " 正在呼入" + at})}
 	case service.CallEventMissed:
 		return Note{Icon: "📵", Title: "未接来电", Tags: tags, Color: "red",
-			Meta: []Span{{Text: number(r.Number), Code: true}, {Text: at}}}
+			Meta: append(who(r.Number, name), Span{Text: at})}
 	}
 	var s summary
 	json.Unmarshal([]byte(r.Summary), &s)
 	// What the caller said about themselves is all the note knows.
 	n := Note{Icon: "🤖", Title: "AI 接听", Tags: tags, Color: "blue", Headline: s.Brief, Footnote: cmp.Or(s.Error, "来电者的身份和说法未经核实"),
-		Meta: []Span{{Text: number(r.Number), Code: true}, {Text: at}}}
+		Meta: append(who(r.Number, name), Span{Text: at})}
 	if !r.AnsweredAt.IsZero() && !r.EndedAt.IsZero() {
 		n.Meta = append(n.Meta, Span{Text: fmt.Sprintf(" · 通话 %d 秒", int(r.EndedAt.Sub(r.AnsweredAt).Seconds()))})
 	}

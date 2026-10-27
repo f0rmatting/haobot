@@ -340,9 +340,10 @@ export function Modal({ open, onClose, title, description, children, footer, ton
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div ref={panel} className={clsx("animate-in relative w-full rounded-t-3xl bg-panel-solid shadow-2xl ring-1 ring-line sm:rounded-3xl", size === "lg" ? "max-w-2xl" : "max-w-md")}>
-        {tone === "danger" && <div className="h-1 rounded-t-3xl bg-bad" />}
-        <div className="flex items-start justify-between gap-4 px-6 pt-6">
+      {/* At most the viewport's height: the title and buttons stay, the body scrolls. */}
+      <div ref={panel} className={clsx("animate-in relative flex max-h-[92dvh] w-full flex-col rounded-t-3xl bg-panel-solid shadow-2xl ring-1 ring-line sm:max-h-[calc(100dvh-2rem)] sm:rounded-3xl", size === "lg" ? "max-w-2xl" : "max-w-md")}>
+        {tone === "danger" && <div className="h-1 shrink-0 rounded-t-3xl bg-bad" />}
+        <div className="flex shrink-0 items-start justify-between gap-4 px-6 pt-6">
           <div>
             <h3 id={titleId} className="text-lg font-semibold tracking-tight">
               {title}
@@ -351,8 +352,8 @@ export function Modal({ open, onClose, title, description, children, footer, ton
           </div>
           <IconButton icon={X} label="关闭" onClick={onClose} className="-mt-1 -mr-2" />
         </div>
-        {children && <div className="space-y-4 px-6 pt-5">{children}</div>}
-        <div className="flex flex-col-reverse gap-2 px-6 pt-6 pb-6 sm:flex-row sm:justify-end">{footer}</div>
+        {children && <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain px-6 pt-5 pb-1">{children}</div>}
+        <div className="flex shrink-0 flex-col-reverse gap-2 px-6 pt-5 pb-6 sm:flex-row sm:justify-end">{footer}</div>
       </div>
     </div>
   );
@@ -437,4 +438,10 @@ export function useToast(): ToastApi {
 // ProBadge marks features only shown in professional mode.
 export function ProBadge() {
   return <span className="rounded-md bg-accent-2/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-accent-2 uppercase ring-1 ring-accent-2/25">Pro</span>;
+}
+
+// PeerAvatar is a contact's photo or an organisation's logo.
+export function PeerAvatar({ src, size = "md", className }: { src: string; size?: "sm" | "md" | "lg" | "xl"; className?: string }) {
+  const sizes = { sm: "size-8 rounded-xl", md: "size-10 rounded-2xl", lg: "size-12 rounded-2xl", xl: "size-14 rounded-2xl" };
+  return <img src={src} alt="" loading="lazy" draggable={false} className={clsx("shrink-0 bg-white object-cover ring-1 ring-line", sizes[size], className)} />;
 }
