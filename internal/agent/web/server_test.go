@@ -517,3 +517,203 @@ func TestSavedKeyStaysWithItsServer(t *testing.T) {
 		t.Fatalf("telegram token to another API host: status %d", code)
 	}
 }
+
+func TestContactsNameConversations(t *testing.T) {
+	e := newTestEnv(t)
+	e.login(t)
+	var c contactJSON
+	if code := e.call(t, "POST", "/api/contacts", map[string]string{"name": "银行通知", "number": "1069-0"}, &c); code != http.StatusOK || c.ID == 0 {
+		t.Fatalf("add contact: %d %+v", code, c)
+	}
+	if code := e.call(t, "POST", "/api/contacts", map[string]string{"name": "重复", "number": "10690"}, nil); code != http.StatusConflict {
+		t.Fatalf("duplicate number: %d", code)
+	}
+	if code := e.call(t, "POST", "/api/contacts", map[string]string{"name": " ", "number": "10086"}, nil); code != http.StatusBadRequest {
+		t.Fatalf("empty name: %d", code)
+	}
+	var list struct{ Items []conversationJSON }
+	e.call(t, "GET", "/api/conversations", nil, &list)
+	if got := list.Items[0]; got.Name != "银行通知" || got.NameSource != "contact" || got.Last.Name != "银行通知" {
+		t.Fatalf("conversation = %+v", got)
+	}
+	if code := e.call(t, "PUT", "/api/contacts/"+itoa(c.ID), map[string]string{"name": "工行", "number": "10690", "note": "n"}, &c); code != http.StatusOK || c.Name != "工行" {
+		t.Fatalf("update: %d %+v", code, c)
+	}
+	if code := e.call(t, "DELETE", "/api/contacts/"+itoa(c.ID), nil, nil); code != http.StatusOK {
+		t.Fatalf("delete: %d", code)
+	}
+	var after struct{ Items []conversationJSON }
+	e.call(t, "GET", "/api/conversations", nil, &after)
+	if after.Items[0].Name != "" {
+		t.Fatalf("name kept after delete: %+v", after.Items[0])
+	}
+	var yp struct {
+		Source string
+		Orgs   []struct{ Name string }
+	}
+	if e.call(t, "GET", "/api/yellowpages", nil, &yp); len(yp.Orgs) < 100 || !strings.Contains(yp.Source, "vCards") {
+		t.Fatalf("yellow pages: %d orgs, source %q", len(yp.Orgs), yp.Source)
+	}
+}
+
+func TestContactAvatarAndLogos(t *testing.T) {
+	e := newTestEnv(t)
+	e.login(t)
+	// A 1x1 PNG.
+	png := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+	var c contactJSON
+	if code := e.call(t, "POST", "/api/contacts", map[string]any{"name": "妈妈", "number": "13800138000", "avatar": png}, &c); code != http.StatusOK || c.Avatar == "" {
+		t.Fatalf("add with avatar: %d %+v", code, c)
+	}
+	resp, err := e.client.Get(e.ts.URL + c.Avatar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("avatar: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	// Leaving avatar out keeps it; "" removes it.
+	var kept contactJSON
+	e.call(t, "PUT", "/api/contacts/"+itoa(c.ID), map[string]any{"name": "老妈", "number": "13800138000"}, &kept)
+	if kept.Avatar == "" {
+		t.Fatalf("avatar dropped on edit: %+v", kept)
+	}
+	var removed contactJSON
+	e.call(t, "PUT", "/api/contacts/"+itoa(c.ID), map[string]any{"name": "老妈", "number": "13800138000", "avatar": ""}, &removed)
+	if removed.Avatar != "" {
+		t.Fatalf("avatar kept after removal: %+v", removed)
+	}
+	if code := e.call(t, "PUT", "/api/contacts/"+itoa(c.ID), map[string]any{"name": "x", "number": "13800138000", "avatar": "data:image/png;base64,PHN2Zz48L3N2Zz4="}, nil); code != http.StatusBadRequest {
+		t.Fatalf("svg avatar: %d", code)
+	}
+
+	// The test messages come from 10690 and are signed 【银行】, which is
+	// no organisation; a signed one gets its logo.
+	ctx := context.Background()
+	e.store.SaveSegment(ctx, store.Segment{PDUHash: "z", PDU: "p", Sender: "1069088", SentAt: time.Now(), ReceivedAt: time.Now(), Total: 1, Seq: 1, Body: "【招商银行】您的验证码是 112233", DeviceID: "866000000000001"})
+	e.store.AssemblePending(ctx, time.Now(), time.Hour, nil)
+	var list struct{ Items []conversationJSON }
+	e.call(t, "GET", "/api/conversations", nil, &list)
+	var logo string
+	for _, conv := range list.Items {
+		if conv.Peer == "1069088" {
+			logo = conv.Avatar
+		} else if conv.Avatar != "" {
+			t.Errorf("unsigned conversation has avatar %q", conv.Avatar)
+		}
+	}
+	if !strings.HasPrefix(logo, "/api/yellowpages/logos/") {
+		t.Fatalf("signed conversation avatar = %q", logo)
+	}
+	resp, err = e.client.Get(e.ts.URL + logo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("logo: %d", resp.StatusCode)
+	}
+	if code := e.call(t, "GET", "/api/yellowpages/logos/..%2fyellowpages.json", nil, nil); code != http.StatusNotFound {
+		t.Fatalf("logo path escape: %d", code)
+	}
+}
+
+// get fetches path and returns its body.
+func (e *testEnv) get(t *testing.T, path string) (int, string) {
+	t.Helper()
+	resp, err := e.client.Get(e.ts.URL + path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(body)
+}
+
+func TestContactsImportExport(t *testing.T) {
+	e := newTestEnv(t)
+	e.login(t)
+	e.call(t, "POST", "/api/contacts", map[string]any{"name": "妈妈", "number": "13800138000"}, nil)
+	vcf := "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:张三\r\nTEL;TYPE=CELL:139 0000 0000\r\nTEL;TYPE=WORK:010-12345678\r\nEND:VCARD\r\n" +
+		"BEGIN:VCARD\r\nVERSION:3.0\r\nFN:母亲\r\nTEL:+86 138 0013 8000\r\nNOTE:家里\r\nEND:VCARD\r\n"
+	var res importResult
+	if code := e.call(t, "POST", "/api/contacts/import", map[string]any{"vcf": vcf}, &res); code != http.StatusOK || res != (importResult{Added: 2, Skipped: 1}) {
+		t.Fatalf("import: %d %+v", code, res)
+	}
+	e.call(t, "POST", "/api/contacts/import", map[string]any{"vcf": vcf, "overwrite": true}, &res)
+	if res != (importResult{Updated: 3}) {
+		t.Fatalf("overwrite: %+v", res)
+	}
+	if code := e.call(t, "POST", "/api/contacts/import", map[string]any{"vcf": "hello"}, nil); code != http.StatusBadRequest {
+		t.Fatalf("not a vcard: %d", code)
+	}
+	code, body := e.get(t, "/api/contacts/export")
+	if code != http.StatusOK || !strings.Contains(body, "FN:张三 手机") || !strings.Contains(body, "NOTE:家里") || !strings.Contains(body, "FN:母亲") {
+		t.Fatalf("export: %d %s", code, body)
+	}
+}
+
+func TestYellowPagesEdits(t *testing.T) {
+	e := newTestEnv(t)
+	e.login(t)
+	type pages struct{ Orgs, Hidden []orgJSON }
+	find := func(p pages, name string) *orgJSON {
+		for i := range p.Orgs {
+			if p.Orgs[i].Name == name {
+				return &p.Orgs[i]
+			}
+		}
+		return nil
+	}
+	// Edit a built-in organisation, hide one, add one of our own.
+	numbers := []map[string]string{{"number": "95555"}, {"number": "1069210395555", "label": "营销"}}
+	if code := e.call(t, "POST", "/api/yellowpages/orgs", map[string]any{"builtin": "招商银行", "name": "招商银行", "category": "金融银行", "numbers": numbers}, nil); code != http.StatusOK {
+		t.Fatalf("edit: %d", code)
+	}
+	e.call(t, "POST", "/api/yellowpages/hide", map[string]string{"builtin": "中国工商银行"}, nil)
+	var own struct{ ID int64 }
+	e.call(t, "POST", "/api/yellowpages/orgs", map[string]any{"name": "小区物业", "numbers": []map[string]string{{"number": "021-12345678"}}}, &own)
+	if code := e.call(t, "POST", "/api/yellowpages/orgs", map[string]any{"builtin": "没有这家", "name": "x"}, nil); code != http.StatusNotFound {
+		t.Fatalf("unknown built-in: %d", code)
+	}
+	var p pages
+	e.call(t, "GET", "/api/yellowpages", nil, &p)
+	if o := find(p, "招商银行"); o == nil || !o.Edited || len(o.Numbers) != 2 || o.Logo == "" {
+		t.Fatalf("edited = %+v", o)
+	}
+	if find(p, "中国工商银行") != nil || len(p.Hidden) != 1 {
+		t.Fatalf("hidden: %+v", p.Hidden)
+	}
+	if o := find(p, "小区物业"); o == nil || o.Category != "其它" || o.Builtin != "" {
+		t.Fatalf("own = %+v", o)
+	}
+
+	// Export, put everything back, import: the changes return.
+	code, file := e.get(t, "/api/yellowpages/export")
+	if code != http.StatusOK || !strings.Contains(file, yellowFormat) {
+		t.Fatalf("export: %d", code)
+	}
+	e.call(t, "DELETE", "/api/yellowpages/orgs/"+itoa(find(p, "招商银行").ID), nil, nil)
+	e.call(t, "DELETE", "/api/yellowpages/orgs/"+itoa(own.ID), nil, nil)
+	e.call(t, "POST", "/api/yellowpages/unhide", nil, nil)
+	e.call(t, "GET", "/api/yellowpages", nil, &p)
+	if o := find(p, "招商银行"); o.Edited || find(p, "小区物业") != nil || len(p.Hidden) != 0 {
+		t.Fatalf("not reset: %+v", o)
+	}
+	var raw map[string]any
+	json.Unmarshal([]byte(file), &raw)
+	var res importResult
+	if code := e.call(t, "POST", "/api/yellowpages/import", raw, &res); code != http.StatusOK || res.Added != 3 {
+		t.Fatalf("import: %d %+v", code, res)
+	}
+	e.call(t, "GET", "/api/yellowpages", nil, &p)
+	if o := find(p, "招商银行"); !o.Edited || find(p, "小区物业") == nil || len(p.Hidden) != 1 {
+		t.Fatalf("after import: %+v %+v", o, p.Hidden)
+	}
+	// Importing again changes nothing.
+	e.call(t, "POST", "/api/yellowpages/import", raw, &res)
+	if res.Added != 0 || res.Updated != 3 {
+		t.Fatalf("again: %+v", res)
+	}
+}

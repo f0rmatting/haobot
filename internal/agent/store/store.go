@@ -104,6 +104,30 @@ CREATE TABLE IF NOT EXISTS calls (
 );
 CREATE INDEX IF NOT EXISTS calls_started ON calls(started_at DESC);
 
+CREATE TABLE IF NOT EXISTS contacts (
+	id         INTEGER PRIMARY KEY,
+	name       TEXT    NOT NULL,
+	number     TEXT    NOT NULL,
+	key        TEXT    NOT NULL UNIQUE,
+	note       TEXT    NOT NULL DEFAULT '',
+	avatar     BLOB,
+	updated_at INTEGER NOT NULL
+);
+
+-- yellow_orgs are the user's changes to the built-in yellow pages: an
+-- edited or hidden built-in organisation (builtin is its name), or one of
+-- their own (builtin is NULL).
+CREATE TABLE IF NOT EXISTS yellow_orgs (
+	id         INTEGER PRIMARY KEY,
+	builtin    TEXT UNIQUE,
+	name       TEXT    NOT NULL,
+	category   TEXT    NOT NULL,
+	numbers    TEXT    NOT NULL DEFAULT '[]',
+	logo       BLOB,
+	hidden     INTEGER NOT NULL DEFAULT 0,
+	updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS devices (
 	id         TEXT PRIMARY KEY,
 	name       TEXT    NOT NULL,
@@ -207,6 +231,7 @@ var addedColumns = []struct{ table, column, definition string }{
 	{"calls", "summary", "TEXT NOT NULL DEFAULT ''"},
 	{"calls", "recording", "TEXT NOT NULL DEFAULT ''"},
 	{"calls", "callback_done", "INTEGER NOT NULL DEFAULT 0"},
+	{"contacts", "avatar", "BLOB"},
 }
 
 // migrate brings existing tables up to date, then creates anything missing.

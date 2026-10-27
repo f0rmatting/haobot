@@ -190,7 +190,7 @@ func TestNotifierPushesAndRetries(t *testing.T) {
 
 func TestFormatMessageMasksCodes(t *testing.T) {
 	m := store.Message{Sender: "10690", Body: "验证码 654321，请勿泄露", Category: "验证码", Complete: true, ReceivedAt: time.Now()}
-	text := MessageNote(m, "", true).HTML()
+	text := MessageNote(m, "", "", true).HTML()
 	if strings.Contains(text, "654321") || !strings.Contains(text, "••••••") {
 		t.Fatalf("code not masked: %s", text)
 	}
@@ -234,7 +234,7 @@ func (f *fakeBot) server(t *testing.T) *httptest.Server {
 
 func TestBotsSignAndRender(t *testing.T) {
 	now := time.Unix(1700000000, 0)
-	note := MessageNote(store.Message{Sender: "95588", Body: "验证码 *654321*，[勿告诉他人]", Category: "验证码", Complete: true, ReceivedAt: now}, "EC20", false)
+	note := MessageNote(store.Message{Sender: "95588", Body: "验证码 *654321*，[勿告诉他人]", Category: "验证码", Complete: true, ReceivedAt: now}, "中国工商银行", "EC20", false)
 
 	feishu := &fakeBot{reply: `{"code":0,"msg":"success"}`}
 	srv := feishu.server(t)
@@ -247,7 +247,7 @@ func TestBotsSignAndRender(t *testing.T) {
 		t.Fatalf("feishu body = %v", b)
 	}
 	card, _ := json.Marshal(b["card"])
-	for _, want := range []string{"验证码 **654321**", "＊654321＊", "［勿告诉他人］", `"template":"green"`, "EC20"} {
+	for _, want := range []string{"验证码 **654321**", "＊654321＊", "［勿告诉他人］", `"template":"green"`, "EC20", "中国工商银行"} {
 		if !strings.Contains(string(card), want) {
 			t.Errorf("feishu card missing %q: %s", want, card)
 		}

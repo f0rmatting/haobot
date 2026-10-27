@@ -9,6 +9,7 @@ import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { Messages } from "./pages/Messages";
 import { Calls } from "./pages/Calls";
+import { Contacts } from "./pages/Contacts";
 import { Device } from "./pages/Device";
 import { SettingsPage } from "./pages/Settings";
 import { Logs } from "./pages/Logs";
@@ -41,6 +42,7 @@ export function App() {
         <Route index element={<Dashboard />} />
         <Route path="messages" element={<Messages />} />
         <Route path="calls" element={<Calls />} />
+        <Route path="contacts" element={<Contacts />} />
         <Route path="device" element={<Device />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="logs" element={<Logs />} />

@@ -209,10 +209,10 @@ func toModemJSON(m modem.Status) modemJSON {
 	}
 }
 
-func liveDevice(out *deviceJSON, snap service.Snapshot) {
+func (s *Server) liveDevice(out *deviceJSON, snap service.Snapshot) {
 	out.Online = true
 	out.Health = toHealthJSON(snap, time.Now())
-	out.Calls, out.Audio = toCallsJSON(snap)
+	out.Calls, out.Audio = s.toCallsJSON(snap)
 	out.Assistant = toAssistantJSON(snap.Assistant)
 	out.Connected, out.Endpoint, out.LastError, out.SMSReady = snap.Connected, snap.Endpoint, snap.LastError, snap.SMSReady
 	out.LastSync, out.PINBlocked = timePtr(snap.LastSync), snap.PINBlocked
@@ -250,7 +250,7 @@ func (s *Server) devices(r *http.Request, unread map[string]int) ([]deviceJSON, 
 		}
 		j.Health = healthJSON{Level: "bad", Summary: "离线", Recoveries: []recoveryJSON{}}
 		if snap, ok := live[d.ID]; ok {
-			liveDevice(&j, snap)
+			s.liveDevice(&j, snap)
 		}
 		j.Health.SelfTestTarget, _ = s.Settings.SelfTestTarget(r.Context(), d.ID)
 		if j.Health.SelfTestTarget == "" {
@@ -260,7 +260,7 @@ func (s *Server) devices(r *http.Request, unread map[string]int) ([]deviceJSON, 
 	}
 	for _, snap := range pending {
 		j := deviceJSON{ID: "", Name: "正在连接…", Enabled: true}
-		liveDevice(&j, snap)
+		s.liveDevice(&j, snap)
 		out = append(out, j)
 	}
 	return out, nil

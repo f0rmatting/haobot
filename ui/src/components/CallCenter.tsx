@@ -7,7 +7,7 @@ import { useStatus } from "../lib/hooks";
 import { callAudio, useCallAudio } from "../lib/callAudio";
 import { startRingtone, stopRingtone } from "../lib/ringtone";
 import { knownDevices } from "../lib/devices";
-import { Button, IconButton, useToast } from "./ui";
+import { Button, IconButton, PeerAvatar, useToast } from "./ui";
 import { Popover } from "./Popover";
 
 const stateLabel: Record<LiveCall["state"], string> = {
@@ -64,7 +64,7 @@ export function CallCenter() {
     let on = false;
     const id = setInterval(() => {
       on = !on;
-      document.title = on ? `📞 来电 ${ringing.c.number || ""}` : base;
+      document.title = on ? `📞 来电 ${ringing.c.name || ringing.c.number || ""}` : base;
     }, 1000);
     return () => {
       clearInterval(id);
@@ -117,11 +117,12 @@ function IncomingCall({ d, c }: { d: DeviceStatus; c: LiveCall }) {
         <div className="flex items-center gap-4">
           <div className="relative flex size-14 shrink-0 items-center justify-center rounded-2xl bg-ok/15 text-ok">
             <span className="absolute inset-0 animate-ping rounded-2xl bg-ok/20" />
-            <PhoneIncoming className="relative size-7" />
+            {c.avatar ? <PeerAvatar src={c.avatar} size="xl" className="relative" /> : <PhoneIncoming className="relative size-7" />}
           </div>
           <div className="min-w-0">
             <p className="text-xs text-muted">来电 · {d.name}</p>
-            <p className="truncate text-xl font-semibold tracking-tight tabular-nums">{c.number || "未知号码"}</p>
+            <p className="truncate text-xl font-semibold tracking-tight tabular-nums">{c.name || c.number || "未知号码"}</p>
+            {c.name && <p className="truncate text-sm text-muted tabular-nums">{c.number}</p>}
           </div>
         </div>
         <div className="mt-5 grid grid-cols-2 gap-3">
@@ -241,7 +242,7 @@ function CallBar({ d, c }: { d: DeviceStatus; c: LiveCall }) {
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold tabular-nums">
-            {c.number || "未知号码"} <span className="font-normal text-muted">· {d.name}</span>
+            {c.name || c.number || "未知号码"} <span className="font-normal text-muted">· {d.name}</span>
           </p>
           <p className="truncate text-xs text-muted">
             {ai && <span className="font-medium text-accent">{assistantPhase[ai.phase] || "AI 接听中"} · </span>}

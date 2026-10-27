@@ -34,6 +34,7 @@ import (
 	"github.com/f0rmatting/haobot/internal/agent/modem"
 	"github.com/f0rmatting/haobot/internal/agent/notify"
 	"github.com/f0rmatting/haobot/internal/agent/pdu"
+	"github.com/f0rmatting/haobot/internal/agent/phonebook"
 	"github.com/f0rmatting/haobot/internal/agent/secret"
 	"github.com/f0rmatting/haobot/internal/agent/service"
 	"github.com/f0rmatting/haobot/internal/agent/settings"
@@ -307,8 +308,12 @@ func runServe(args []string) error {
 	var worker *classify.Worker
 	recordings := filepath.Join(*dataDir, "recordings")
 	client := classify.NewClient()
+	book := &phonebook.Book{Store: st}
+	if err := book.Reload(ctx); err != nil {
+		log.Warn("load contacts", "error", err)
+	}
 	notifier := &notify.Notifier{
-		Config: conf.Notify, Store: st, Log: log,
+		Config: conf.Notify, Store: st, Log: log, Name: book.Name,
 		ClassifierReady: func(ctx context.Context) bool {
 			cfg, err := conf.LLM(ctx)
 			return err == nil && cfg.Ready() && worker.ModelUp()
@@ -343,7 +348,7 @@ func runServe(args []string) error {
 	notifier.Note = devices.Note
 	srv, err := web.New(web.Deps{
 		Store: st, Devices: devices, Settings: conf, Worker: worker, Client: client, Assistant: aide,
-		RecordingDir: recordings, Notifier: notifier,
+		RecordingDir: recordings, Notifier: notifier, Phonebook: book,
 		Log: log, SecureCookie: *secureCookie || *useTLS,
 	})
 	if err != nil {

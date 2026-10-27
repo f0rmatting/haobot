@@ -684,7 +684,7 @@ function FeedCard({ status }: { status: Status }) {
       tone: "info",
       title: (
         <>
-          短信 · <span className="text-fg">{m.sender}</span>
+          短信 · <span className="text-fg">{m.name || m.sender}</span>
           {m.category && <span className="ml-1.5 text-subtle">{m.category}</span>}
         </>
       ),
@@ -702,7 +702,7 @@ function FeedCard({ status }: { status: Status }) {
       tone: missed ? "warn" : "ok",
       title: (
         <>
-          {ai ? "AI 接听" : missed ? "未接来电" : c.direction === "in" ? "来电" : "去电"} · <span className="text-fg">{c.number || "未知号码"}</span>
+          {ai ? "AI 接听" : missed ? "未接来电" : c.direction === "in" ? "来电" : "去电"} · <span className="text-fg">{c.name || c.number || "未知号码"}</span>
         </>
       ),
       text: where(c.deviceId) + (ai ? c.summary?.brief || "正在生成小结…" : c.status === "completed" ? `通话 ${c.durationSec} 秒` : ""),
@@ -790,10 +790,10 @@ function RecentCard({ status }: { status: Status }) {
               onClick={() => navigate(`/messages?d=${encodeURIComponent(c.deviceId)}&peer=${encodeURIComponent(c.peer)}`)}
               className="flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 text-left transition hover:bg-panel-2"
             >
-              <SenderAvatar message={c.last.direction === "out" ? { ...c.last, category: "个人消息" } : c.last} />
+              <SenderAvatar message={{ ...c.last, category: c.last.direction === "out" ? "个人消息" : c.last.category, avatar: c.avatar }} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className={clsx("truncate text-[13px]", c.unread ? "font-semibold" : "font-medium")}>{c.last.direction === "in" ? c.last.sender || c.peer : c.peer}</span>
+                  <span className={clsx("truncate text-[13px]", c.unread ? "font-semibold" : "font-medium")}>{c.name || (c.last.direction === "in" ? c.last.sender || c.peer : c.peer)}</span>
                   {c.last.direction === "in" && c.last.category && <CategoryChip name={c.last.category} className="hidden shrink-0 sm:inline-flex" />}
                   <span className="ml-auto shrink-0 font-mono text-[10px] text-subtle">{shortTime(c.lastAt)}</span>
                 </div>
@@ -849,7 +849,7 @@ function AssistantNotesCard() {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2 font-mono text-[11px] text-subtle">
-                  <span className="text-fg">{c.number || "未知号码"}</span>
+                  <span className={clsx("text-fg", c.name && "font-sans")}>{c.name || c.number || "未知号码"}</span>
                   {shortTime(c.startedAt)}
                   {s?.category && <span className="truncate font-sans">· {s.category}</span>}
                 </span>
@@ -903,7 +903,7 @@ function CallbacksCard({ items, status }: { items: Callback[]; status: Status })
             </span>
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-2 font-mono text-[12px]">
-                <span className="font-semibold">{c.number}</span>
+                <span className={clsx("font-semibold", c.name && "font-sans")}>{c.name || c.number}</span>
                 <span className="text-subtle">{shortTime(c.startedAt)}</span>
                 {multi && <span className="truncate font-sans text-[11px] text-subtle">{deviceName(status, c.deviceId)}</span>}
               </p>

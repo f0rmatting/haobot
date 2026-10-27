@@ -18,6 +18,7 @@ import (
 	"github.com/f0rmatting/haobot/internal/agent/assistant"
 	"github.com/f0rmatting/haobot/internal/agent/classify"
 	"github.com/f0rmatting/haobot/internal/agent/notify"
+	"github.com/f0rmatting/haobot/internal/agent/phonebook"
 	"github.com/f0rmatting/haobot/internal/agent/service"
 	"github.com/f0rmatting/haobot/internal/agent/settings"
 	"github.com/f0rmatting/haobot/internal/agent/store"
@@ -50,6 +51,8 @@ type Deps struct {
 	Assistant *assistant.Agent
 	// Notifier pushes to Telegram and group bots; the settings page tests it.
 	Notifier *notify.Notifier
+	// Phonebook names numbers; the contacts page edits it.
+	Phonebook *phonebook.Book
 	// RecordingDir holds call recordings.
 	RecordingDir string
 	Log          *slog.Logger
@@ -67,6 +70,9 @@ func New(d Deps) (*Server, error) {
 	app, err := fs.Sub(dist, "dist")
 	if err != nil {
 		return nil, err
+	}
+	if d.Phonebook == nil {
+		d.Phonebook = &phonebook.Book{Store: d.Store}
 	}
 	return &Server{Deps: d, limiter: newLoginLimiter(), app: app}, nil
 }
@@ -133,6 +139,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeCalls(authed)
 	s.routeAssistant(authed)
 	s.routeNotify(authed)
+	s.routeContacts(authed)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "接口不存在")
@@ -288,7 +295,13 @@ func (s *Server) opError(w http.ResponseWriter, err error) {
 }
 
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
-	body := http.MaxBytesReader(w, r.Body, maxBody)
+	return decodeLimit(w, r, v, maxBody)
+}
+
+// decodeLimit is decode for the few requests that carry files, such as an
+// address book to import.
+func decodeLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	body := http.MaxBytesReader(w, r.Body, limit)
 	if err := json.NewDecoder(body).Decode(v); err != nil && !errors.Is(err, io.EOF) {
 		writeError(w, http.StatusBadRequest, "请求格式错误")
 		return false

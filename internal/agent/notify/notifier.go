@@ -31,6 +31,8 @@ type Notifier struct {
 	Log             *slog.Logger
 	// Note records an event in the log the UI shows.
 	Note func(ctx context.Context, level, text string)
+	// Name gives the phone book's name for a number, or "".
+	Name func(number string) string
 
 	Telegram Telegram
 	Bots     Bots
@@ -206,7 +208,7 @@ func (n *Notifier) pushMessage(ctx context.Context, id int64) {
 			if err != nil || !cfg.Rules.wantsSMS(m.Category) {
 				return
 			}
-			n.enqueue(cfg, MessageNote(m, n.deviceName(ctx, m.DeviceID), cfg.Rules.MaskCodes))
+			n.enqueue(cfg, MessageNote(m, n.name(m.Peer), n.deviceName(ctx, m.DeviceID), cfg.Rules.MaskCodes))
 			return
 		}
 		time.Sleep(time.Second)
@@ -237,7 +239,14 @@ func (n *Notifier) Call(e service.CallEvent) {
 	default:
 		return
 	}
-	n.enqueue(cfg, CallNote(e))
+	n.enqueue(cfg, CallNote(e, n.name(e.Record.Peer)))
+}
+
+func (n *Notifier) name(number string) string {
+	if n.Name == nil {
+		return ""
+	}
+	return n.Name(number)
 }
 
 func (n *Notifier) deviceName(ctx context.Context, id string) string {

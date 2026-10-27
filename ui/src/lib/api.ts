@@ -166,7 +166,17 @@ export interface AssistantSettings extends AssistantConfig {
   problem: string;
 }
 
-export interface LiveCall {
+// Named rows carry the phone book's name for their number: the user's own
+// contact, or the built-in yellow pages.
+export interface Named {
+  name?: string;
+  nameSource?: "contact" | "yellowpages";
+  // avatar is a picture URL: the contact's photo, the yellow pages logo, or
+  // the logo of the organisation an SMS is signed by (【招商银行】).
+  avatar?: string;
+}
+
+export interface LiveCall extends Named {
   id: number;
   incoming: boolean;
   state: "active" | "held" | "dialing" | "alerting" | "incoming" | "waiting";
@@ -176,7 +186,7 @@ export interface LiveCall {
   recordId: number;
 }
 
-export interface CallRecord {
+export interface CallRecord extends Named {
   id: number;
   deviceId: string;
   peer: string;
@@ -240,7 +250,7 @@ export interface Status {
   scanModes: Record<string, string>;
 }
 
-export interface Message {
+export interface Message extends Named {
   id: number;
   sender: string;
   body: string;
@@ -264,7 +274,7 @@ export interface Message {
   code?: string;
 }
 
-export interface Conversation {
+export interface Conversation extends Named {
   deviceId: string;
   peer: string;
   total: number;
@@ -409,4 +419,44 @@ export interface TelegramChat {
   id: number;
   type: "private" | "group" | "supergroup" | "channel";
   title: string;
+}
+
+export interface Contact {
+  id: number;
+  name: string;
+  number: string;
+  note: string;
+  avatar?: string;
+  updatedAt: string;
+}
+
+export interface YellowNumber {
+  number: string;
+  label?: string;
+}
+
+// YellowOrg is an organisation of the yellow pages as the user sees it.
+export interface YellowOrg {
+  // id is the user's change to it; absent for a built-in one as it ships.
+  id?: number;
+  // builtin is the name it ships with; absent for the user's own.
+  builtin?: string;
+  name: string;
+  category: string;
+  logo?: string; // picture URL
+  numbers: YellowNumber[];
+  edited?: boolean; // a built-in organisation the user changed
+}
+
+export interface YellowPages {
+  source: string;
+  orgs: YellowOrg[];
+  hidden: YellowOrg[]; // built-in organisations the user removed
+}
+
+// ImportResult counts what an import of contacts or yellow pages did.
+export interface ImportResult {
+  added: number;
+  updated: number;
+  skipped: number;
 }
