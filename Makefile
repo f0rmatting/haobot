@@ -3,9 +3,8 @@ BIN := bin
 VERSION ?=
 LDFLAGS := $(if $(VERSION),-ldflags "-X main.version=$(VERSION)")
 AGENT := ./cmd/haobot-agent
-LABEL := com.haobot.agent
 
-.PHONY: build linux dist test vet clean install-launchd ui ui-dev yellowpages
+.PHONY: build linux dist test vet clean ui ui-dev yellowpages
 
 # Builds the admin UI (ui/) into internal/agent/web/dist, which the agent
 # embeds. The built files are kept in the repository, so Go builds do not
@@ -51,12 +50,3 @@ vet:
 clean:
 	rm -rf $(BIN) dist
 
-# Installs the agent to ~/.local/bin and a per-user LaunchAgent that starts at login.
-install-launchd: build
-	mkdir -p $(HOME)/.local/bin $(HOME)/Library/LaunchAgents $(HOME)/Library/Logs
-	cp $(BIN)/haobot-agent $(HOME)/.local/bin/haobot-agent
-	sed -e 's#__BIN__#$(HOME)/.local/bin/haobot-agent#' -e 's#__HOME__#$(HOME)#g' \
-		deploy/agent/$(LABEL).plist > $(HOME)/Library/LaunchAgents/$(LABEL).plist
-	launchctl bootout gui/$$(id -u)/$(LABEL) 2>/dev/null || true
-	launchctl bootstrap gui/$$(id -u) $(HOME)/Library/LaunchAgents/$(LABEL).plist
-	@echo "已安装。日志：$(HOME)/Library/Logs/haobot-agent.log"

@@ -50,6 +50,10 @@ const usage = `用法:
   haobot-agent purge-binary [参数]  从数据库删除已保存的二进制短信（彩信通知除外）
   haobot-agent backup [参数]        备份数据库、密钥和通话录音（运行中也可以备份）
   haobot-agent restore [参数] 文件  在新机器上恢复备份（先停止 Agent）
+  haobot-agent start [参数]         在后台启动（参数同 serve，会被记住；-lan 允许局域网访问）
+  haobot-agent stop                 停止后台运行的号小助
+  haobot-agent status               查看是否在运行、管理后台地址
+  haobot-agent udev-rules           输出 Linux 的 udev 规则（模组权限、避开 ModemManager）
   haobot-agent version              显示版本
 
 运行 "haobot-agent <命令> -h" 查看参数。
@@ -78,6 +82,14 @@ func main() {
 		err = runBackup(args)
 	case "restore":
 		err = runRestore(args)
+	case "start":
+		err = runStart(args)
+	case "stop":
+		err = runStop(args)
+	case "status":
+		err = runStatus(args)
+	case "udev-rules":
+		err = runUdevRules()
 	case "version":
 		fmt.Println("haobot-agent", buildVersion())
 	case "help":

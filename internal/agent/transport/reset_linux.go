@@ -15,7 +15,7 @@ const usbdevfsReset = 0x5514
 
 // resetSerial finds the USB device behind a /dev/ttyUSB* port through sysfs
 // and resets it with the usbfs ioctl. It needs write access to
-// /dev/bus/usb/BBB/DDD (root, or the udev rule in deploy/agent).
+// /dev/bus/usb/BBB/DDD (root, or plugdev with the rules of "haobot-agent udev-rules").
 func resetSerial(cfg Config) error {
 	port, err := filepath.EvalSymlinks(filepath.Join(sysTTY, filepath.Base(cfg.Device), "device"))
 	if err != nil {
@@ -30,7 +30,7 @@ func resetSerial(cfg Config) error {
 	node := fmt.Sprintf("/dev/bus/usb/%03d/%03d", bus, dev)
 	f, err := os.OpenFile(node, os.O_WRONLY, 0)
 	if err != nil {
-		return fmt.Errorf("打开 %s 失败（需要写权限，见 deploy/agent/99-ec20.rules）：%w", node, err)
+		return fmt.Errorf("打开 %s 失败（需要写权限：用 root 运行，或装上 haobot-agent udev-rules 输出的规则并把用户加入 plugdev 组）：%w", node, err)
 	}
 	defer f.Close()
 	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, f.Fd(), usbdevfsReset, 0); errno != 0 {

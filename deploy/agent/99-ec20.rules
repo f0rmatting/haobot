@@ -1,7 +1,0 @@
-# Lets members of plugdev open the Quectel EC20 directly with libusb (-transport usb)
-# and reset it when it hangs (automatic recovery, both transports).
-# ModemManager, where installed, is told to leave the modem alone: it would
-# otherwise probe and hold the AT ports haobot needs.
-# Install to /etc/udev/rules.d/ and run: udevadm control --reload && udevadm trigger
-SUBSYSTEM=="usb", ATTR{idVendor}=="2c7c", ATTR{idProduct}=="0125", MODE="0660", GROUP="plugdev", ENV{ID_MM_DEVICE_IGNORE}="1"
-SUBSYSTEMS=="usb", ATTRS{idVendor}=="2c7c", ATTRS{idProduct}=="0125", ENV{ID_MM_DEVICE_IGNORE}="1"

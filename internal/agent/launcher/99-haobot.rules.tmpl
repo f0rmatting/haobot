@@ -1,0 +1,12 @@
+# From "haobot-agent udev-rules", for the modems haobot recognises. Install with:
+#   haobot-agent udev-rules | sudo tee /etc/udev/rules.d/99-haobot.rules
+#   sudo udevadm control --reload && sudo udevadm trigger
+# Lets members of plugdev open them directly with libusb (-transport usb)
+# and reset them when they hang (automatic recovery, both transports).
+# ModemManager, where installed, is told to leave them alone: it would
+# otherwise probe and hold the AT ports haobot needs.
+{{- range .}}
+# {{.Name}}
+SUBSYSTEM=="usb", ATTR{idVendor}=="{{printf "%04x" .VendorID}}", ATTR{idProduct}=="{{printf "%04x" .ProductID}}", MODE="0660", GROUP="plugdev", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="{{printf "%04x" .VendorID}}", ATTRS{idProduct}=="{{printf "%04x" .ProductID}}", ENV{ID_MM_DEVICE_IGNORE}="1"
+{{- end}}
