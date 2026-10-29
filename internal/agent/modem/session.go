@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -56,7 +57,11 @@ var unsolicitedPrefixes = []string{
 	"RING", "+CRING:", "+CLIP:", "NO CARRIER", "BUSY", "NO ANSWER", "NO DIALTONE",
 	"+CREG:", "+CEREG:", "+CGREG:", "+CPIN:", "+QIND:", "+QUSIM:",
 	"+CUSD:", "+CFUN:", "RDY", "POWERED DOWN",
+	"+QHTTPGET:", "+QHTTPPOST:", "+QHTTPREADFILE:", "+QIURC:",
 }
+
+// maxData bounds one raw data block announced by "CONNECT <n>".
+const maxData = 64 << 10
 
 // Session serialises commands on one AT port and routes unsolicited result
 // codes to URCs().
@@ -78,6 +83,21 @@ type Session struct {
 	// which arrives without a line terminator.
 	wantPrompt atomic.Bool
 	prompt     chan struct{}
+
+	// wantData is set while a command such as AT+QFREAD answers with
+	// "CONNECT <n>" followed by n raw bytes, which go to data.
+	wantData atomic.Bool
+	data     chan []byte
+
+	// waiters claim result codes a command reports after its OK, such as
+	// +QHTTPGET, whichever command is running when they arrive.
+	waitMu  sync.Mutex
+	waiters []*waiter
+}
+
+type waiter struct {
+	prefix string
+	ch     chan string
 }
 
 // NewSession starts reading from port. The caller owns port's lifetime only
@@ -89,6 +109,7 @@ func NewSession(port io.ReadWriteCloser) *Session {
 		urcs:   make(chan string, 64),
 		done:   make(chan struct{}),
 		prompt: make(chan struct{}, 1),
+		data:   make(chan []byte, 1),
 	}
 	s.active.Store("")
 	go s.readLoop()
@@ -133,10 +154,29 @@ func (s *Session) readLoop() {
 			return
 		}
 		if b == '\r' || b == '\n' {
-			if len(line) > 0 {
-				s.dispatch(string(line))
-				line = line[:0]
+			if len(line) == 0 {
+				continue
 			}
+			if n, ok := s.dataLength(string(line)); ok {
+				line = line[:0]
+				if b == '\r' {
+					if next, err := reader.Peek(1); err == nil && next[0] == '\n' {
+						reader.ReadByte()
+					}
+				}
+				block := make([]byte, n)
+				if _, err := io.ReadFull(reader, block); err != nil {
+					s.err = fmt.Errorf("%w: %v", ErrClosed, err)
+					return
+				}
+				select {
+				case s.data <- block:
+				default:
+				}
+				continue
+			}
+			s.dispatch(string(line))
+			line = line[:0]
 			continue
 		}
 		line = append(line, b)
@@ -150,7 +190,26 @@ func (s *Session) readLoop() {
 	}
 }
 
+// dataLength recognises the "CONNECT <n>" that announces raw data.
+func (s *Session) dataLength(line string) (int, bool) {
+	if !s.wantData.Load() {
+		return 0, false
+	}
+	value, ok := strings.CutPrefix(line, "CONNECT ")
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || n < 0 || n > maxData {
+		return 0, false
+	}
+	return n, true
+}
+
 func (s *Session) dispatch(line string) {
+	if s.claim(line) {
+		return
+	}
 	if !s.busy.Load() || isUnsolicited(line, s.active.Load().(string)) {
 		select {
 		case s.urcs <- line:
@@ -161,6 +220,40 @@ func (s *Session) dispatch(line string) {
 	select {
 	case s.lines <- line:
 	default:
+	}
+}
+
+// claim hands line to the first waiter expecting it.
+func (s *Session) claim(line string) bool {
+	s.waitMu.Lock()
+	defer s.waitMu.Unlock()
+	for i, w := range s.waiters {
+		if strings.HasPrefix(line, w.prefix) {
+			w.ch <- line // buffered, and each waiter gets one line
+			s.waiters = append(s.waiters[:i], s.waiters[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// Expect delivers the next line starting with prefix, for results a command
+// reports some time after its OK (AT+QHTTPGET reports +QHTTPGET). Register
+// before sending the command; cancel stops waiting.
+func (s *Session) Expect(prefix string) (<-chan string, func()) {
+	w := &waiter{prefix: prefix, ch: make(chan string, 1)}
+	s.waitMu.Lock()
+	s.waiters = append(s.waiters, w)
+	s.waitMu.Unlock()
+	return w.ch, func() {
+		s.waitMu.Lock()
+		defer s.waitMu.Unlock()
+		for i, other := range s.waiters {
+			if other == w {
+				s.waiters = append(s.waiters[:i], s.waiters[i+1:]...)
+				return
+			}
+		}
 	}
 }
 
@@ -257,6 +350,109 @@ func (s *Session) Submit(ctx context.Context, cmd, payload string, timeout time.
 		return nil, fmt.Errorf("%w: write %s payload: %v", ErrClosed, label, err)
 	}
 	return s.await(ctx, cmd, label, timeout, timer)
+}
+
+// Upload runs a command that takes raw input after a "CONNECT" line, such
+// as AT+QHTTPURL: it sends cmd, waits for CONNECT, writes data and waits
+// for the final result.
+func (s *Session) Upload(ctx context.Context, cmd string, data []byte, timeout time.Duration) ([]string, error) {
+	s.cmdMu.Lock()
+	defer s.cmdMu.Unlock()
+	s.drain()
+	if err := s.resync(ctx, timeout); err != nil {
+		return nil, err
+	}
+	s.active.Store(commandName(cmd))
+	s.busy.Store(true)
+	defer s.busy.Store(false)
+
+	if _, err := io.WriteString(s.port, cmd+"\r"); err != nil {
+		return nil, fmt.Errorf("%w: write %s: %v", ErrClosed, cmd, err)
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for waiting := true; waiting; {
+		select {
+		case line := <-s.lines:
+			switch {
+			case strings.HasPrefix(line, "CONNECT"):
+				waiting = false
+			case isFinalError(line):
+				return nil, &CommandError{Command: cmd, Result: line}
+			case line == "OK":
+				return nil, &CommandError{Command: cmd, Result: "OK without CONNECT"}
+			}
+		case <-s.done:
+			return nil, s.err
+		case <-timer.C:
+			s.stale.Store(true)
+			return nil, fmt.Errorf("%s 在 %s 内没有给出 CONNECT: %w", cmd, timeout, ErrTimeout)
+		case <-ctx.Done():
+			s.stale.Store(true)
+			return nil, ctx.Err()
+		}
+	}
+	if _, err := s.port.Write(data); err != nil {
+		return nil, fmt.Errorf("%w: write %s data: %v", ErrClosed, cmd, err)
+	}
+	return s.await(ctx, cmd, cmd, timeout, timer)
+}
+
+// ReadData runs a command that answers with "CONNECT <n>", n raw bytes and
+// OK, such as AT+QFREAD.
+func (s *Session) ReadData(ctx context.Context, cmd string, timeout time.Duration) ([]byte, error) {
+	s.cmdMu.Lock()
+	defer s.cmdMu.Unlock()
+	s.drain()
+	if err := s.resync(ctx, timeout); err != nil {
+		return nil, err
+	}
+	s.active.Store(commandName(cmd))
+	s.busy.Store(true)
+	defer s.busy.Store(false)
+	s.wantData.Store(true)
+	defer s.wantData.Store(false)
+
+	if _, err := io.WriteString(s.port, cmd+"\r"); err != nil {
+		return nil, fmt.Errorf("%w: write %s: %v", ErrClosed, cmd, err)
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	var block []byte
+	for {
+		select {
+		case block = <-s.data:
+		case line := <-s.lines:
+			switch {
+			case line == "OK":
+				if block == nil {
+					return nil, &CommandError{Command: cmd, Result: "OK without data"}
+				}
+				return block, nil
+			case isFinalError(line):
+				return nil, &CommandError{Command: cmd, Result: line}
+			}
+		case <-s.done:
+			return nil, s.err
+		case <-timer.C:
+			s.stale.Store(true)
+			return nil, &TimeoutError{Command: cmd, Timeout: timeout}
+		case <-ctx.Done():
+			s.stale.Store(true)
+			return nil, ctx.Err()
+		}
+	}
+}
+
+func (s *Session) drain() {
+	for {
+		select {
+		case <-s.lines:
+		case <-s.data:
+		default:
+			return
+		}
+	}
 }
 
 // await collects response lines until the final result of cmd.

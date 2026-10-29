@@ -122,6 +122,7 @@ type Service struct {
 	snapshot Snapshot
 
 	pinBlocked atomic.Bool // a PIN attempt failed; no automatic retries
+	mmsBusy    atomic.Bool // an MMS download is running
 
 	noteMu   sync.Mutex
 	lastNote string // suppresses repeating the same event

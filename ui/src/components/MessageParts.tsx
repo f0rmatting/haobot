@@ -37,9 +37,21 @@ export function SenderAvatar({ message, size = "md" }: { message: Pick<Message, 
 
 // preview flattens a body to one line for the list.
 export function preview(m: Message): string {
-  if (m.kind === "mms") return m.body ? `[彩信] ${m.body}` : "[彩信通知]";
+  if (m.kind === "mms") {
+    const text = mmsText(m);
+    if (text) return `[彩信] ${text.replace(/\s+/g, " ").trim()}`;
+    return m.body ? `[彩信] ${m.body}` : "[彩信通知]";
+  }
   if (m.binary) return "[二进制数据]";
   return m.body.replace(/\s+/g, " ").trim();
+}
+
+// mmsText joins the text parts of a downloaded MMS.
+export function mmsText(m: Message): string {
+  return (m.mmsParts ?? [])
+    .map((p) => p.text?.trim() ?? "")
+    .filter(Boolean)
+    .join("\n");
 }
 
 // CodePill shows the verification code with one-tap copy.

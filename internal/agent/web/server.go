@@ -128,6 +128,8 @@ func (s *Server) Handler() http.Handler {
 	authed("PATCH /api/messages/{id}", s.patchMessage)
 	authed("DELETE /api/messages/{id}", s.deleteMessage)
 	authed("POST /api/messages/bulk", s.bulkMessages)
+	authed("POST /api/messages/{id}/mms/download", s.downloadMMS)
+	authed("GET /api/messages/{id}/mms/{part}", s.mmsPartData)
 
 	authed("PUT /api/settings/password", s.putPassword)
 	authed("GET /api/settings/classifier", s.getClassifier)

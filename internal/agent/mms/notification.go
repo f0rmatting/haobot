@@ -359,9 +359,16 @@ func (r *reader) skipValue() error {
 // toUTF8 converts text in an IANA MIBenum charset.
 func toUTF8(text string, charset int64) string {
 	switch charset {
-	case 106, 3, 0: // UTF-8, US-ASCII, unspecified
+	case 106, 3: // UTF-8, US-ASCII
 		if utf8.ValidString(text) {
 			return text
+		}
+	case 0: // unspecified: UTF-8, or else what Chinese phones send
+		if utf8.ValidString(text) {
+			return text
+		}
+		if decoded, err := simplifiedchinese.GB18030.NewDecoder().String(text); err == nil {
+			return decoded
 		}
 	case 4: // ISO-8859-1
 		runes := make([]rune, 0, len(text))
@@ -371,9 +378,14 @@ func toUTF8(text string, charset int64) string {
 		return string(runes)
 	case 1000, 1013, 1015: // UCS-2 / UTF-16BE / UTF-16
 		raw := []byte(text)
+		little := len(raw) >= 2 && raw[0] == 0xFF && raw[1] == 0xFE
 		units := make([]uint16, 0, len(raw)/2)
 		for i := 0; i+1 < len(raw); i += 2 {
-			units = append(units, uint16(raw[i])<<8|uint16(raw[i+1]))
+			if little {
+				units = append(units, uint16(raw[i+1])<<8|uint16(raw[i]))
+			} else {
+				units = append(units, uint16(raw[i])<<8|uint16(raw[i+1]))
+			}
 		}
 		return string(utf16.Decode(units))
 	case 2025, 113, 114: // GB2312, GBK, GB18030
