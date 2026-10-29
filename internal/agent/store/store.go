@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS messages (
 	mms_url     TEXT    NOT NULL DEFAULT '',
 	mms_size    INTEGER NOT NULL DEFAULT 0,
 	mms_expiry  INTEGER NOT NULL DEFAULT 0,
+	mms_state   TEXT    NOT NULL DEFAULT '',
+	mms_error   TEXT    NOT NULL DEFAULT '',
 	category        TEXT    NOT NULL DEFAULT '',
 	category_source TEXT    NOT NULL DEFAULT '',
 	classified_at   INTEGER NOT NULL DEFAULT 0,
@@ -65,6 +67,17 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS messages_sent_at ON messages(sent_at DESC);
 CREATE INDEX IF NOT EXISTS messages_category ON messages(category);
 CREATE INDEX IF NOT EXISTS messages_conversation ON messages(device_id, peer, sent_at);
+
+-- mms_parts hold the content of downloaded MMS.
+CREATE TABLE IF NOT EXISTS mms_parts (
+	id           INTEGER PRIMARY KEY,
+	message_id   INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+	seq          INTEGER NOT NULL,
+	content_type TEXT    NOT NULL,
+	name         TEXT    NOT NULL DEFAULT '',
+	data         BLOB    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS mms_parts_message ON mms_parts(message_id, seq);
 
 CREATE TABLE IF NOT EXISTS classify_log (
 	id          INTEGER PRIMARY KEY,
@@ -193,6 +206,10 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("fill conversation keys: %w", err)
 	}
+	if err := interruptDownloads(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("reset MMS downloads: %w", err)
+	}
 	// The database holds every message. SQLite creates it, and the -wal and
 	// -shm files after it, readable by all; the data directory may be a
 	// shared one (a NAS volume) that does not keep others out.
@@ -215,6 +232,8 @@ var addedColumns = []struct{ table, column, definition string }{
 	{"messages", "mms_url", "TEXT NOT NULL DEFAULT ''"},
 	{"messages", "mms_size", "INTEGER NOT NULL DEFAULT 0"},
 	{"messages", "mms_expiry", "INTEGER NOT NULL DEFAULT 0"},
+	{"messages", "mms_state", "TEXT NOT NULL DEFAULT ''"},
+	{"messages", "mms_error", "TEXT NOT NULL DEFAULT ''"},
 	{"messages", "category", "TEXT NOT NULL DEFAULT ''"},
 	{"messages", "category_source", "TEXT NOT NULL DEFAULT ''"},
 	{"messages", "classified_at", "INTEGER NOT NULL DEFAULT 0"},
@@ -335,6 +354,10 @@ type Message struct {
 	MMSURL    string
 	MMSSize   int64
 	MMSExpiry time.Time
+	// MMSState says whether the content has been fetched from the MMSC:
+	// "", MMSDownloading, MMSDownloaded or MMSFailed (see MMSError).
+	MMSState string
+	MMSError string
 
 	// Category is "" until the message has been classified; CategorySource
 	// says how ("rule", "llm" or "manual").
@@ -366,6 +389,10 @@ const (
 const (
 	KindSMS = "sms"
 	KindMMS = "mms"
+
+	MMSDownloading = "downloading"
+	MMSDownloaded  = "downloaded"
+	MMSFailed      = "failed"
 )
 
 // Finalizer may rewrite a newly assembled message before it is stored, for
@@ -565,7 +592,7 @@ type Filter struct {
 const Uncategorized = "-"
 
 const messageColumns = `id, sender, body, sent_at, received_at, parts, complete, binary, kind, mms_url, mms_size, mms_expiry,
-	category, category_source, classified_at, read, device_id, peer, direction, status, error`
+	mms_state, mms_error, category, category_source, classified_at, read, device_id, peer, direction, status, error`
 
 func (f Filter) where() (string, []any) {
 	var clauses []string
@@ -616,7 +643,7 @@ func scanMessage(row scanner) (Message, error) {
 	var m Message
 	var sentAt, receivedAt, expiry, classifiedAt int64
 	if err := row.Scan(&m.ID, &m.Sender, &m.Body, &sentAt, &receivedAt, &m.Parts, &m.Complete, &m.Binary,
-		&m.Kind, &m.MMSURL, &m.MMSSize, &expiry, &m.Category, &m.CategorySource, &classifiedAt, &m.Read,
+		&m.Kind, &m.MMSURL, &m.MMSSize, &expiry, &m.MMSState, &m.MMSError, &m.Category, &m.CategorySource, &classifiedAt, &m.Read,
 		&m.DeviceID, &m.Peer, &m.Direction, &m.Status, &m.Error); err != nil {
 		return m, err
 	}

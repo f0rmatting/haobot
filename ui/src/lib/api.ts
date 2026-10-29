@@ -263,6 +263,9 @@ export interface Message extends Named {
   mmsUrl?: string;
   mmsSize?: number;
   mmsExpiry?: string;
+  mmsState?: "downloading" | "downloaded" | "failed";
+  mmsError?: string;
+  mmsParts?: MMSPart[];
   category: string;
   categorySource: "" | "rule" | "llm" | "manual";
   read: boolean;
@@ -272,6 +275,15 @@ export interface Message extends Named {
   status?: "sending" | "sent" | "failed";
   error?: string;
   code?: string;
+}
+
+export interface MMSPart {
+  id: number;
+  contentType: string;
+  name?: string;
+  size: number;
+  text?: string; // set for text/plain
+  url: string;
 }
 
 export interface Conversation extends Named {

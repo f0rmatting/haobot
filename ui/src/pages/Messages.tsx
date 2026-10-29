@@ -2,8 +2,8 @@ import clsx from "clsx";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { AlertCircle, ArrowLeft, Check, Copy, Inbox, Loader2, MessageSquarePlus, MessagesSquare, MoreHorizontal, Phone, RotateCw, ScrollText, Search, Send, ShieldCheck, Tags, Trash2, UserPlus, X } from "lucide-react";
-import { api, type ClassifierSettings, type Conversation, type Finding, type Message, type Page, type Status } from "../lib/api";
+import { AlertCircle, ArrowLeft, Check, Copy, Download, Inbox, Loader2, MessageSquarePlus, MessagesSquare, MoreHorizontal, Paperclip, Phone, RotateCw, ScrollText, Search, Send, ShieldCheck, Tags, Trash2, UserPlus, X } from "lucide-react";
+import { api, type ClassifierSettings, type Conversation, type Finding, type Message, type MMSPart, type Page, type Status } from "../lib/api";
 import { useStatus } from "../lib/hooks";
 import { bytes, dateTime, shortTime } from "../lib/format";
 import { categoryStyle, sourceLabel } from "../lib/categories";
@@ -438,16 +438,80 @@ function Bubble({ m }: { m: Message }) {
 }
 
 function MMSBody({ m }: { m: Message }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [starting, setStarting] = useState(false);
+  const downloading = m.mmsState === "downloading" || starting;
+  const expired = !!m.mmsExpiry && new Date(m.mmsExpiry).getTime() < Date.now();
+  const download = async () => {
+    setStarting(true);
+    try {
+      await api.post(`/api/messages/${m.id}/mms/download`);
+      qc.invalidateQueries({ queryKey: ["thread"] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setStarting(false);
+    }
+  };
+  if (m.mmsState === "downloaded") {
+    // SMIL only lays out the slides; its text and pictures are parts of their own.
+    const parts = (m.mmsParts ?? []).filter((p) => p.contentType !== "application/smil");
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone="info">彩信</Badge>
+          {m.body && <span className="font-medium">{m.body}</span>}
+        </div>
+        {parts.length === 0 && <p className="text-subtle">（彩信里没有内容）</p>}
+        {parts.map((p) => (
+          <MMSPartView key={p.id} part={p} />
+        ))}
+      </div>
+    );
+  }
   return (
     <div>
       <Badge tone="info">彩信</Badge>
       <p className="mt-1">{m.body || "（无主题）"}</p>
       <p className="mt-1 text-xs text-muted">
         {m.mmsSize ? bytes(m.mmsSize) : ""}
-        {m.mmsExpiry ? ` · 有效期至 ${dateTime(m.mmsExpiry)}` : ""}
+        {m.mmsExpiry ? `${m.mmsSize ? " · " : ""}${expired ? "已于" : "有效期至"} ${dateTime(m.mmsExpiry)}${expired ? " 过期" : ""}` : ""}
       </p>
-      <p className="mt-1 text-xs text-subtle">彩信的图片和文字存在运营商服务器上，这里只收到通知，看不到内容</p>
+      {m.mmsState === "failed" && (
+        <p className="mt-1 flex items-start gap-1 text-xs text-bad">
+          <AlertCircle className="mt-0.5 size-3 shrink-0" />
+          下载失败：{m.mmsError || "未知原因"}
+        </p>
+      )}
+      {m.mmsUrl ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" icon={Download} loading={downloading} onClick={download}>
+            {downloading ? "正在下载" : m.mmsState === "failed" ? "重新下载" : "下载彩信"}
+          </Button>
+          <span className="text-xs text-subtle">{downloading ? "通过模组的彩信网络下载，一般要十几秒到一分钟" : "通过模组用运营商的彩信网络下载，会用一点流量"}</span>
+        </div>
+      ) : (
+        <p className="mt-1 text-xs text-subtle">这条通知没有下载地址</p>
+      )}
     </div>
+  );
+}
+
+function MMSPartView({ part }: { part: MMSPart }) {
+  if (part.contentType === "text/plain") return part.text ? <p>{part.text}</p> : null;
+  if (part.contentType.startsWith("image/") && part.contentType !== "image/vnd.wap.wbmp")
+    return (
+      <a href={part.url} target="_blank" rel="noopener noreferrer" className="block">
+        <img src={part.url} alt={part.name || "彩信图片"} loading="lazy" className="max-h-80 max-w-full rounded-xl bg-white object-contain ring-1 ring-line" />
+      </a>
+    );
+  return (
+    <a href={part.url} download className="inline-flex items-center gap-1.5 rounded-lg bg-panel px-2.5 py-1.5 text-xs ring-1 ring-line hover:ring-line-strong">
+      <Paperclip className="size-3.5" />
+      {part.name || part.contentType}
+      <span className="text-subtle">{bytes(part.size)}</span>
+    </a>
   );
 }
 
